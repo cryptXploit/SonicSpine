@@ -3,12 +3,14 @@ import { PoseEngine } from '../../vision/PoseEngine';
 import { LandmarkProcessor } from '../../vision/LandmarkProcessor';
 import { ConfidenceEstimator } from '../../vision/ConfidenceEstimator';
 import { PostureLandmarks } from '../../vision/types';
+import { FeatureExtractor } from '../../posture/FeatureExtractor';
+import { PostureFeatures } from '../../posture/types';
 
 export type CameraState = 'INITIALIZING' | 'READY' | 'DENIED' | 'UNAVAILABLE' | 'ERROR';
 
 interface CameraViewProps {
   onStreamReady?: (stream: MediaStream) => void;
-  onPoseUpdate?: (landmarks: PostureLandmarks | null, confidence: 'HIGH' | 'LOW' | 'NONE') => void;
+  onPoseUpdate?: (landmarks: PostureLandmarks | null, features: PostureFeatures | null, confidence: 'HIGH' | 'LOW' | 'NONE') => void;
 }
 
 export function CameraView({ onStreamReady, onPoseUpdate }: CameraViewProps) {
@@ -103,9 +105,14 @@ export function CameraView({ onStreamReady, onPoseUpdate }: CameraViewProps) {
         
         const landmarks = LandmarkProcessor.process(result);
         const confidence = ConfidenceEstimator.evaluate(landmarks);
+        let features = null;
+
+        if (landmarks && confidence === 'HIGH') {
+          features = FeatureExtractor.extract(landmarks);
+        }
 
         if (onPoseUpdate) {
-          onPoseUpdate(landmarks, confidence);
+          onPoseUpdate(landmarks, features, confidence);
         }
 
         // Visualization
