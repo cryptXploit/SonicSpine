@@ -1,6 +1,16 @@
-import { render, screen, act } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { CameraView } from './CameraView';
+
+vi.mock('../../vision/PoseEngine', () => {
+  return {
+    PoseEngine: class {
+      initialize = vi.fn().mockResolvedValue(true);
+      detect = vi.fn().mockReturnValue(null);
+      get isModelReady() { return true; }
+    }
+  };
+});
 
 describe('CameraView Component', () => {
   beforeEach(() => {
@@ -14,11 +24,11 @@ describe('CameraView Component', () => {
       configurable: true,
     });
 
-    await act(async () => {
-      render(<CameraView />);
-    });
+    render(<CameraView />);
 
-    expect(screen.getByTestId('camera-error')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByTestId('camera-error')).toBeInTheDocument();
+    });
     expect(screen.getByText('Camera access is not supported in this browser.')).toBeInTheDocument();
   });
 
@@ -30,11 +40,11 @@ describe('CameraView Component', () => {
       configurable: true,
     });
 
-    await act(async () => {
-      render(<CameraView />);
-    });
+    render(<CameraView />);
 
-    expect(screen.getByTestId('camera-error')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByTestId('camera-error')).toBeInTheDocument();
+    });
     expect(screen.getByText(/Camera access is required/i)).toBeInTheDocument();
   });
 
@@ -46,11 +56,11 @@ describe('CameraView Component', () => {
       configurable: true,
     });
 
-    await act(async () => {
-      render(<CameraView />);
-    });
+    render(<CameraView />);
 
-    expect(screen.getByTestId('camera-error')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByTestId('camera-error')).toBeInTheDocument();
+    });
     expect(screen.getByText('No camera device found.')).toBeInTheDocument();
   });
 
@@ -66,12 +76,12 @@ describe('CameraView Component', () => {
       configurable: true,
     });
 
-    await act(async () => {
-      render(<CameraView />);
-    });
+    render(<CameraView />);
 
-    expect(screen.queryByTestId('camera-error')).not.toBeInTheDocument();
-    const video = screen.getByTestId('camera-video') as HTMLVideoElement;
-    expect(video).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByTestId('camera-error')).not.toBeInTheDocument();
+      const video = screen.getByTestId('camera-video') as HTMLVideoElement;
+      expect(video).toBeInTheDocument();
+    });
   });
 });
