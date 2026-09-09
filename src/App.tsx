@@ -5,6 +5,7 @@ import { PostureStateMachine, PostureState } from './posture/PostureStateMachine
 import { TemporalFilter } from './posture/TemporalFilter';
 import { AudioEngine } from './audio/AudioEngine';
 import { SessionManager, SessionAnalytics } from './analytics/SessionManager';
+import { db } from './storage/Database';
 import { PostureFeatures } from './posture/types';
 import { PostureLandmarks } from './vision/types';
 
@@ -108,10 +109,15 @@ function App() {
     stateMachineRef.current.startCalibration();
   };
 
-  const stopSession = () => {
+  const stopSession = async () => {
     audioRef.current?.pause();
     const summary = sessionManagerRef.current.endSession();
     if (summary) {
+      try {
+        await db.saveSession(summary);
+      } catch (e) {
+        console.error("Failed to save session to DB", e);
+      }
       setSessionSummary(summary);
     }
   };
