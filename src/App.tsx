@@ -6,6 +6,7 @@ import { TemporalFilter } from './posture/TemporalFilter';
 import { AudioEngine } from './audio/AudioEngine';
 import { SessionManager, SessionAnalytics } from './analytics/SessionManager';
 import { db } from './storage/Database';
+import { Dashboard } from './components/Dashboard/Dashboard';
 import { PostureFeatures } from './posture/types';
 import { PostureLandmarks } from './vision/types';
 
@@ -254,6 +255,8 @@ function App() {
           <CameraView onPoseUpdate={handlePoseUpdate} />
         </div>
       </main>
+
+      {!baseline && <Dashboard />}
     </div>
   );
 }
