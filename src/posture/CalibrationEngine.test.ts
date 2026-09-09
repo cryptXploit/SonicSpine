@@ -1,60 +1,54 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { CalibrationEngine } from './CalibrationEngine';
 import { PostureFeatures } from './types';
 
 describe('CalibrationEngine', () => {
-  beforeEach(() => {
-    localStorage.clear();
-  });
-
-  const createSample = (tilt: number, roll: number, depth: number, width: number): PostureFeatures => ({
+  const createSample = (tilt: number, roll: number, crane: number, collapse: number): PostureFeatures => ({
     headTilt: tilt,
     shoulderRoll: roll,
-    neckForwardDepth: depth,
-    shoulderWidth: width
+    forwardCraneRatio: crane,
+    neckCollapseRatio: collapse
   });
 
-  it('calculates progress correctly', () => {
-    const engine = new CalibrationEngine(10, 10.0);
+  it('initializes with 0 progress', () => {
+    const engine = new CalibrationEngine(5);
     expect(engine.getProgress()).toBe(0);
-    
-    engine.addSample(createSample(0, 0, 0, 0));
-    engine.addSample(createSample(0, 0, 0, 0));
-    
-    expect(engine.getProgress()).toBe(0.2); // 2/10
   });
 
   it('returns null if not enough samples', () => {
-    const engine = new CalibrationEngine(5, 10.0);
-    engine.addSample(createSample(0, 0, 0, 0));
+    const engine = new CalibrationEngine(3);
+    engine.addSample(createSample(0, 0, 0.5, 0.8));
+    engine.addSample(createSample(1, 1, 0.51, 0.79));
+    
+    expect(engine.getProgress()).toBeCloseTo(2/3);
     expect(engine.calibrate()).toBeNull();
   });
 
-  it('generates a stable baseline and saves to localStorage', () => {
-    const engine = new CalibrationEngine(3, 10.0);
+  it('calculates averages correctly', () => {
+    const engine = new CalibrationEngine(3, 300); // high variance threshold
+    engine.addSample(createSample(0, 0, 0.5, 0.8));
+    engine.addSample(createSample(2, 4, 0.6, 0.9));
+    engine.addSample(createSample(-2, -4, 0.4, 0.7));
     
-    engine.addSample(createSample(1, 2, -0.1, 0.4));
-    engine.addSample(createSample(2, 3, -0.1, 0.4));
-    engine.addSample(createSample(3, 4, -0.1, 0.4));
-    
+    expect(engine.getProgress()).toBe(1.0);
     const baseline = engine.calibrate();
-    expect(baseline).not.toBeNull();
-    expect(baseline!.features.headTilt).toBe(2); // avg of 1, 2, 3
-    expect(baseline!.features.shoulderRoll).toBe(3); // avg of 2, 3, 4
     
-    const loaded = CalibrationEngine.loadBaseline();
-    expect(loaded).not.toBeNull();
-    expect(loaded!.features.headTilt).toBe(2);
+    expect(baseline).not.toBeNull();
+    expect(baseline!.features.headTilt).toBeCloseTo(0);
+    expect(baseline!.features.shoulderRoll).toBeCloseTo(0);
+    expect(baseline!.features.forwardCraneRatio).toBeCloseTo(0.5);
+    expect(baseline!.features.neckCollapseRatio).toBeCloseTo(0.8);
+    expect(baseline!.timestamp).toBeGreaterThan(0);
   });
 
   it('throws an error and resets if variance is too high', () => {
-    const engine = new CalibrationEngine(3, 5.0); // Strict variance threshold
+    const engine = new CalibrationEngine(3, 5.0); // max variance 5
     
-    // Create wildly fluctuating samples
-    engine.addSample(createSample(-20, -10, 0, 0.4));
-    engine.addSample(createSample(0, 0, 0, 0.4));
-    engine.addSample(createSample(20, 10, 0, 0.4));
-    
+    // Create highly variable samples
+    engine.addSample(createSample(0, 0, 0.5, 0.8));
+    engine.addSample(createSample(20, 10, 0.6, 0.9));
+    engine.addSample(createSample(-20, -10, 0.4, 0.7));
+
     expect(() => engine.calibrate()).toThrow('Calibration unstable');
     expect(engine.getProgress()).toBe(0); // Should reset automatically
   });

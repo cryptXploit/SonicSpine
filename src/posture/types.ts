@@ -6,8 +6,8 @@ export interface PostureFeatures {
   headTilt: number;
   
   /** Relative Z depth difference between the head and the shoulders. Negative values typically mean the head is closer to the camera. */
-  neckForwardDepth: number;
+  forwardCraneRatio: number;
   
   /** Normalized 2D Euclidean distance between left and right shoulders. Useful as a scale reference. */
-  shoulderWidth: number;
+  neckCollapseRatio: number;
 }

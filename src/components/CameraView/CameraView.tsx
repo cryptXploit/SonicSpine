@@ -20,12 +20,21 @@ export function CameraView({ onStreamReady, onPoseUpdate }: CameraViewProps) {
   const [errorMessage, setErrorMessage] = useState<string>('');
   const engineRef = useRef<PoseEngine | null>(null);
 
+  const onPoseUpdateRef = useRef(onPoseUpdate);
+  const onStreamReadyRef = useRef(onStreamReady);
+
+  useEffect(() => {
+    onPoseUpdateRef.current = onPoseUpdate;
+    onStreamReadyRef.current = onStreamReady;
+  }, [onPoseUpdate, onStreamReady]);
+
   useEffect(() => {
     let activeStream: MediaStream | null = null;
     let animationFrameId: number;
+    let lastInferenceTime = 0;
+    const INFERENCE_INTERVAL_MS = 100; // max 10 FPS for performance
 
     async function initializeSystem() {
-      // 1. Initialize Pose Engine
       try {
         const engine = new PoseEngine();
         await engine.initialize();
@@ -37,7 +46,6 @@ export function CameraView({ onStreamReady, onPoseUpdate }: CameraViewProps) {
         return;
       }
 
-      // 2. Initialize Camera
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         setCameraState('UNAVAILABLE');
         setErrorMessage('Camera access is not supported in this browser.');
@@ -46,7 +54,7 @@ export function CameraView({ onStreamReady, onPoseUpdate }: CameraViewProps) {
 
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
+          video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' },
         });
         
         activeStream = stream;
@@ -54,14 +62,13 @@ export function CameraView({ onStreamReady, onPoseUpdate }: CameraViewProps) {
         
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
-          // Start inference loop once video plays
           videoRef.current.onloadedmetadata = () => {
             videoRef.current?.play();
             startInferenceLoop();
           };
         }
 
-        if (onStreamReady) onStreamReady(stream);
+        if (onStreamReadyRef.current) onStreamReadyRef.current(stream);
       } catch (err: any) {
         console.error('Camera initialization error:', err);
         if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
@@ -87,49 +94,50 @@ export function CameraView({ onStreamReady, onPoseUpdate }: CameraViewProps) {
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
 
-      function renderLoop() {
+      function renderLoop(timestamp: number) {
         if (!video || video.readyState < 2) {
           animationFrameId = requestAnimationFrame(renderLoop);
           return;
         }
 
-        // Match canvas to video dimensions
         if (canvas!.width !== video.videoWidth) {
           canvas!.width = video.videoWidth;
           canvas!.height = video.videoHeight;
         }
 
-        // Run inference
-        const timestamp = performance.now();
-        const result = engine!.detect(video, timestamp);
-        
-        const landmarks = LandmarkProcessor.process(result);
-        const confidence = ConfidenceEstimator.evaluate(landmarks);
-        let features = null;
+        // Throttle inference
+        if (timestamp - lastInferenceTime >= INFERENCE_INTERVAL_MS) {
+          lastInferenceTime = timestamp;
+          
+          const result = engine!.detect(video, performance.now());
+          
+          const landmarks = LandmarkProcessor.process(result);
+          const confidence = ConfidenceEstimator.evaluate(landmarks);
+          let features = null;
 
-        if (landmarks && confidence === 'HIGH') {
-          features = FeatureExtractor.extract(landmarks);
-        }
+          if (landmarks && confidence === 'HIGH') {
+            features = FeatureExtractor.extract(landmarks);
+          }
 
-        if (onPoseUpdate) {
-          onPoseUpdate(landmarks, features, confidence);
-        }
+          if (onPoseUpdateRef.current) {
+            onPoseUpdateRef.current(landmarks, features, confidence);
+          }
 
-        // Visualization
-        ctx!.clearRect(0, 0, canvas!.width, canvas!.height);
-        
-        if (landmarks && confidence === 'HIGH') {
-          drawSkeleton(ctx!, landmarks, canvas!.width, canvas!.height);
-        } else if (confidence === 'LOW') {
-          ctx!.fillStyle = 'rgba(255, 0, 0, 0.5)';
-          ctx!.font = '24px sans-serif';
-          ctx!.fillText('Low Confidence: Please move into view', 20, 40);
+          // Minimal visualization: clear canvas. We will remove the skeleton later as per directive.
+          // For now, just show low confidence warnings if needed.
+          ctx!.clearRect(0, 0, canvas!.width, canvas!.height);
+          
+          if (confidence === 'LOW') {
+            ctx!.fillStyle = 'rgba(255, 0, 0, 0.7)';
+            ctx!.font = '20px sans-serif';
+            ctx!.fillText('Low Confidence: Move into view', 20, 40);
+          }
         }
 
         animationFrameId = requestAnimationFrame(renderLoop);
       }
       
-      renderLoop();
+      animationFrameId = requestAnimationFrame(renderLoop);
     }
 
     initializeSystem();
@@ -138,41 +146,7 @@ export function CameraView({ onStreamReady, onPoseUpdate }: CameraViewProps) {
       if (activeStream) activeStream.getTracks().forEach((track) => track.stop());
       if (animationFrameId) cancelAnimationFrame(animationFrameId);
     };
-  }, [onStreamReady, onPoseUpdate]);
-
-  function drawSkeleton(ctx: CanvasRenderingContext2D, landmarks: PostureLandmarks, w: number, h: number) {
-    ctx.save();
-    ctx.fillStyle = '#10b981'; // emerald-500
-    ctx.strokeStyle = '#34d399'; // emerald-400
-    ctx.lineWidth = 4;
-
-    const drawPoint = (pt: {x: number, y: number}) => {
-      ctx.beginPath();
-      ctx.arc(pt.x * w, pt.y * h, 6, 0, 2 * Math.PI);
-      ctx.fill();
-    };
-
-    const drawLine = (pt1: {x: number, y: number}, pt2: {x: number, y: number}) => {
-      ctx.beginPath();
-      ctx.moveTo(pt1.x * w, pt1.y * h);
-      ctx.lineTo(pt2.x * w, pt2.y * h);
-      ctx.stroke();
-    };
-
-    // Draw lines
-    drawLine(landmarks.leftShoulder, landmarks.rightShoulder);
-    drawLine(landmarks.leftEar, landmarks.leftShoulder);
-    drawLine(landmarks.rightEar, landmarks.rightShoulder);
-    
-    // Draw points
-    drawPoint(landmarks.nose);
-    drawPoint(landmarks.leftEar);
-    drawPoint(landmarks.rightEar);
-    drawPoint(landmarks.leftShoulder);
-    drawPoint(landmarks.rightShoulder);
-
-    ctx.restore();
-  }
+  }, []);
 
   return (
     <div className="flex flex-col items-center justify-center w-full h-full min-h-[400px] bg-slate-900 rounded-lg overflow-hidden relative">

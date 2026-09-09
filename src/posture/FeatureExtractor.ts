@@ -9,25 +9,34 @@ export class FeatureExtractor {
     // Assuming un-mirrored raw image space: rightEar has smaller X than leftEar.
     // To calculate angle intuitively (tilt), we go from user's right to user's left.
     // Let's go from rightEar to leftEar.
-    
     const headTilt = this.calculateAngle(landmarks.rightEar, landmarks.leftEar);
     const shoulderRoll = this.calculateAngle(landmarks.rightShoulder, landmarks.leftShoulder);
     
-    // Depth difference: average ear Z minus average shoulder Z
-    const avgEarZ = (landmarks.leftEar.z + landmarks.rightEar.z) / 2;
-    const avgShoulderZ = (landmarks.leftShoulder.z + landmarks.rightShoulder.z) / 2;
-    const neckForwardDepth = avgEarZ - avgShoulderZ;
+    // Distance between shoulders
+    const shoulderDx = landmarks.leftShoulder.x - landmarks.rightShoulder.x;
+    const shoulderDy = landmarks.leftShoulder.y - landmarks.rightShoulder.y;
+    const shoulderWidth = Math.sqrt(shoulderDx * shoulderDx + shoulderDy * shoulderDy);
 
-    // Euclidean distance between shoulders
-    const dx = landmarks.leftShoulder.x - landmarks.rightShoulder.x;
-    const dy = landmarks.leftShoulder.y - landmarks.rightShoulder.y;
-    const shoulderWidth = Math.sqrt(dx * dx + dy * dy);
+    // Head size (ear to ear)
+    const headDx = landmarks.leftEar.x - landmarks.rightEar.x;
+    const headDy = landmarks.leftEar.y - landmarks.rightEar.y;
+    const headSize = Math.sqrt(headDx * headDx + headDy * headDy);
+
+    // Vertical distance from shoulders to nose
+    const shoulderMidY = (landmarks.leftShoulder.y + landmarks.rightShoulder.y) / 2;
+    // Y increases downwards in image space.
+    // If the user slouches, the nose gets closer to the shoulders, so the distance decreases.
+    // We normalize this by shoulder width to make it distance-independent.
+    const neckCollapseRatio = (shoulderMidY - landmarks.nose.y) / shoulderWidth;
+
+    // Forward crane ratio (head size relative to shoulder width)
+    const forwardCraneRatio = headSize / shoulderWidth;
 
     return {
       shoulderRoll,
       headTilt,
-      neckForwardDepth,
-      shoulderWidth
+      forwardCraneRatio,
+      neckCollapseRatio
     };
   }
 

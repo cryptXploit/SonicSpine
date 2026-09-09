@@ -32,16 +32,16 @@ export class CalibrationEngine {
     const sum = this.samples.reduce((acc, curr) => ({
       shoulderRoll: acc.shoulderRoll + curr.shoulderRoll,
       headTilt: acc.headTilt + curr.headTilt,
-      neckForwardDepth: acc.neckForwardDepth + curr.neckForwardDepth,
-      shoulderWidth: acc.shoulderWidth + curr.shoulderWidth
-    }), { shoulderRoll: 0, headTilt: 0, neckForwardDepth: 0, shoulderWidth: 0 });
+      forwardCraneRatio: acc.forwardCraneRatio + curr.forwardCraneRatio,
+      neckCollapseRatio: acc.neckCollapseRatio + curr.neckCollapseRatio
+    }), { shoulderRoll: 0, headTilt: 0, forwardCraneRatio: 0, neckCollapseRatio: 0 });
 
     const n = this.samples.length;
     const avg: PostureFeatures = {
       shoulderRoll: sum.shoulderRoll / n,
       headTilt: sum.headTilt / n,
-      neckForwardDepth: sum.neckForwardDepth / n,
-      shoulderWidth: sum.shoulderWidth / n
+      forwardCraneRatio: sum.forwardCraneRatio / n,
+      neckCollapseRatio: sum.neckCollapseRatio / n
     };
 
     // Calculate variance (measure of stability)
@@ -49,8 +49,9 @@ export class CalibrationEngine {
     for (const sample of this.samples) {
       varianceSum += Math.pow(sample.headTilt - avg.headTilt, 2);
       varianceSum += Math.pow(sample.shoulderRoll - avg.shoulderRoll, 2);
-      // depth variance is tiny, so we scale it up to be comparable to degrees, or ignore it
-      varianceSum += Math.pow((sample.neckForwardDepth - avg.neckForwardDepth) * 100, 2);
+      // Ratios are small, scale them up for variance check
+      varianceSum += Math.pow((sample.forwardCraneRatio - avg.forwardCraneRatio) * 100, 2);
+      varianceSum += Math.pow((sample.neckCollapseRatio - avg.neckCollapseRatio) * 100, 2);
     }
     const variance = varianceSum / n;
 
