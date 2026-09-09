@@ -21,11 +21,8 @@ describe('Dashboard Component', () => {
     (db.getRecentSessions as any).mockResolvedValue([]);
     render(<Dashboard />);
     
-    expect(screen.getByText('Loading history...')).toBeInTheDocument();
-    
     await waitFor(() => {
-      expect(screen.getByTestId('dashboard-empty')).toBeInTheDocument();
-      expect(screen.getByText('No sessions recorded yet.')).toBeInTheDocument();
+      expect(screen.getByText('No recent sessions yet')).toBeInTheDocument();
     });
   });
 
@@ -39,13 +36,11 @@ describe('Dashboard Component', () => {
     render(<Dashboard />);
     
     await waitFor(() => {
-      expect(screen.getByTestId('dashboard-history')).toBeInTheDocument();
+      expect(screen.getByText('Recent Consistency')).toBeInTheDocument();
     });
 
     // Avg of 100 and 50 is 75
     expect(screen.getByText('75%')).toBeInTheDocument();
-    expect(screen.getByText('100%')).toBeInTheDocument();
-    expect(screen.getByText('50%')).toBeInTheDocument();
-    expect(screen.getByText('2')).toBeInTheDocument(); // 2 sessions
+    expect(screen.getByText('2m')).toBeInTheDocument(); // 60000 + 60000 = 120000ms = 2m
   });
 });

@@ -1,96 +1,81 @@
 import { useEffect, useState } from 'react';
-import { db, SavedSession } from '../../storage/Database';
+import { db } from '../../storage/Database';
+import { SessionAnalytics } from '../../analytics/SessionManager';
 
 export function Dashboard() {
-  const [sessions, setSessions] = useState<SavedSession[]>([]);
+  const [sessions, setSessions] = useState<SessionAnalytics[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    let mounted = true;
-    async function fetchSessions() {
+    const loadData = async () => {
       try {
-        const recent = await db.getRecentSessions(10);
-        if (mounted) setSessions(recent);
+        const data = await db.getRecentSessions(10);
+        setSessions(data); // Already descending
       } catch (e) {
-        console.error("Failed to fetch sessions", e);
+        console.error("Failed to load dashboard data", e);
       } finally {
-        if (mounted) setLoading(false);
+        setLoading(false);
       }
-    }
-    fetchSessions();
-    
-    return () => { mounted = false; };
+    };
+    loadData();
   }, []);
 
   if (loading) {
-    return <div className="p-8 text-center text-slate-500 animate-pulse">Loading history...</div>;
-  }
-
-  if (sessions.length === 0) {
     return (
-      <div className="p-8 mt-6 text-center bg-slate-50 rounded-2xl border border-slate-200" data-testid="dashboard-empty">
-        <svg className="w-12 h-12 mx-auto text-slate-300 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-        </svg>
-        <p className="text-slate-500 font-medium">No sessions recorded yet.</p>
-        <p className="text-sm text-slate-400 mt-1">Start tracking your posture to build your history!</p>
+      <div className="w-full text-center py-8">
+        <div className="w-6 h-6 border-2 border-slate-300 border-t-emerald-500 rounded-full animate-spin mx-auto"></div>
       </div>
     );
   }
 
-  const avgScore = Math.round(
+  if (sessions.length === 0) {
+    return (
+      <div className="w-full text-center py-8">
+        <p className="text-sm text-slate-400 font-medium tracking-wide uppercase">No recent sessions yet</p>
+      </div>
+    );
+  }
+
+  // Calculate average consistency
+  const avgConsistency = Math.round(
     sessions.reduce((acc, s) => acc + s.healthScore, 0) / sessions.length
   );
-
-  const formatTime = (ms: number) => {
-    const totalSeconds = Math.floor(ms / 1000);
-    const m = Math.floor(totalSeconds / 60);
-    const s = totalSeconds % 60;
-    return `${m}m ${s}s`;
-  };
+  
+  // Format total duration
+  const totalMs = sessions.reduce((acc, s) => acc + s.totalSessionDurationMs, 0);
+  const totalMin = Math.floor(totalMs / 60000);
 
   return (
-    <div className="w-full max-w-4xl mt-8" data-testid="dashboard-history">
-      <h2 className="text-xl font-bold text-slate-800 mb-4 px-2">Your Progress</h2>
+    <div className="w-full mt-4">
+      <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4 px-2">Recent Consistency</h3>
       
-      <div className="bg-gradient-to-r from-emerald-50 to-teal-50 rounded-2xl p-6 mb-6 border border-emerald-100/50 flex items-center justify-between shadow-sm">
-        <div>
-          <p className="text-sm text-emerald-700/80 font-medium mb-1">Recent Average</p>
-          <p className="text-4xl font-bold text-emerald-600">{avgScore}%</p>
+      <div className="bg-white rounded-[2rem] shadow-lg shadow-slate-200/40 border border-slate-100 p-6 mb-6">
+        <div className="flex justify-between items-end mb-6">
+          <div>
+            <p className="text-3xl font-black text-slate-800">{avgConsistency}%</p>
+            <p className="text-xs font-semibold text-slate-400 uppercase mt-1 tracking-wider">Avg Consistency</p>
+          </div>
+          <div className="text-right">
+            <p className="text-xl font-bold text-slate-700">{totalMin}m</p>
+            <p className="text-xs font-semibold text-slate-400 uppercase mt-1 tracking-wider">Total Time</p>
+          </div>
         </div>
-        <div className="text-right">
-          <p className="text-sm text-emerald-700/80 font-medium mb-1">Sessions</p>
-          <p className="text-2xl font-bold text-emerald-600">{sessions.length}</p>
-        </div>
-      </div>
 
-      <div className="space-y-3">
-        {sessions.map((session, i) => (
-          <div key={session.id || i} className="bg-white border border-slate-200 rounded-xl p-5 flex justify-between items-center shadow-sm hover:shadow-md transition-shadow">
-            <div>
-              <p className="font-semibold text-slate-700 mb-1">
-                {new Date(session.timestamp).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} at {new Date(session.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
-              </p>
-              <div className="flex gap-3 text-xs font-medium text-slate-500">
-                <span className="flex items-center gap-1">
-                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  {formatTime(session.totalSessionDurationMs)}
-                </span>
-                <span className="flex items-center gap-1">
-                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-                  </svg>
-                  {session.deviationCount} corrections
-                </span>
+        {/* Small bar chart representation */}
+        <div className="flex items-end gap-2 h-16 pt-2 border-t border-slate-100">
+          {sessions.slice(0, 10).map((session, i) => (
+            <div key={i} className="flex-1 flex flex-col justify-end h-full group relative">
+              <div 
+                className={`w-full rounded-t-sm transition-all duration-300 ${session.healthScore > 80 ? 'bg-emerald-400' : session.healthScore > 50 ? 'bg-amber-400' : 'bg-rose-400'}`}
+                style={{ height: `${Math.max(10, session.healthScore)}%` }}
+              />
+              {/* Tooltip on hover/tap (native) */}
+              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 bg-slate-800 text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 pointer-events-none whitespace-nowrap transition-opacity z-10">
+                {session.healthScore}% ({Math.floor(session.totalSessionDurationMs / 60000)}m)
               </div>
             </div>
-            <div className={`text-2xl font-bold ${session.healthScore >= 80 ? 'text-emerald-500' : session.healthScore >= 50 ? 'text-amber-500' : 'text-red-500'}`}>
-              {session.healthScore}%
-            </div>
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
     </div>
   );
