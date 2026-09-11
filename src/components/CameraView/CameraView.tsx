@@ -10,7 +10,7 @@ export type CameraState = 'INITIALIZING' | 'READY' | 'DENIED' | 'UNAVAILABLE' | 
 
 interface CameraViewProps {
   onStreamReady?: (stream: MediaStream) => void;
-  onPoseUpdate?: (landmarks: PostureLandmarks | null, features: PostureFeatures | null, confidence: 'HIGH' | 'LOW' | 'NONE') => void;
+  onPoseUpdate?: (landmarks: PostureLandmarks | null, features: PostureFeatures | null, confidence: import('../../vision/ConfidenceEstimator').ConfidenceResult) => void;
 }
 
 export function CameraView({ onStreamReady, onPoseUpdate }: CameraViewProps) {
@@ -115,7 +115,7 @@ export function CameraView({ onStreamReady, onPoseUpdate }: CameraViewProps) {
           const confidence = ConfidenceEstimator.evaluate(landmarks);
           let features = null;
 
-          if (landmarks && confidence === 'HIGH') {
+          if (landmarks && confidence.level === 'HIGH') {
             features = FeatureExtractor.extract(landmarks);
           }
 
@@ -127,7 +127,7 @@ export function CameraView({ onStreamReady, onPoseUpdate }: CameraViewProps) {
           // For now, just show low confidence warnings if needed.
           ctx!.clearRect(0, 0, canvas!.width, canvas!.height);
           
-          if (confidence === 'LOW') {
+          if (confidence.level === 'LOW') {
             ctx!.fillStyle = 'rgba(255, 0, 0, 0.7)';
             ctx!.font = '20px sans-serif';
             ctx!.fillText('Low Confidence: Move into view', 20, 40);

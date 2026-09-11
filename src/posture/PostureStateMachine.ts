@@ -1,3 +1,5 @@
+import { ConfidenceResult } from '../vision/ConfidenceEstimator';
+
 export type PostureState =
   | 'BOOT'
   | 'CAMERA_READY'
@@ -11,15 +13,20 @@ export type PostureState =
   | 'ERROR';
 
 export interface StateContext {
-  confidence: 'HIGH' | 'LOW' | 'NONE';
-  isInstantlyOutOfBounds: boolean;
-  isSustainedDeviation: boolean;
-  isSustainedRecovery: boolean;
+  confidence: ConfidenceResult;
+  stateFlags: {
+    isDrifting: boolean;
+    isCorrective: boolean;
+    isRecovered: boolean;
+  };
 }
 
 export class PostureStateMachine {
   private currentState: PostureState = 'BOOT';
   private onStateChange?: (newState: PostureState) => void;
+  
+  private lowConfidenceStartTime: number | null = null;
+  private readonly LOW_CONFIDENCE_TIMEOUT_MS = 5000;
 
   constructor(onStateChange?: (newState: PostureState) => void) {
     this.onStateChange = onStateChange;
@@ -47,59 +54,78 @@ export class PostureStateMachine {
 
   public finishCalibration() {
     if (this.currentState === 'CALIBRATING') {
-      // Typically transitioning to READY, and then automatically to GOOD to start tracking
       this.transitionTo('READY');
       this.transitionTo('GOOD');
     }
   }
 
-  public processFrame(ctx: StateContext) {
+  public processFrame(ctx: StateContext, nowMs?: number) {
     if (!this.isActiveSession(this.currentState) && this.currentState !== 'LOW_CONFIDENCE') {
       return; 
     }
 
-    if (ctx.confidence === 'LOW' || ctx.confidence === 'NONE') {
+    const now = nowMs ?? performance.now();
+
+    // 1. Handle Confidence Gating
+    if (ctx.confidence.level === 'LOW' || ctx.confidence.level === 'NONE') {
       if (this.currentState !== 'LOW_CONFIDENCE') {
-        this.transitionTo('LOW_CONFIDENCE');
+        if (this.lowConfidenceStartTime === null) {
+          this.lowConfidenceStartTime = now;
+        } else if (now - this.lowConfidenceStartTime > this.LOW_CONFIDENCE_TIMEOUT_MS) {
+          this.transitionTo('LOW_CONFIDENCE');
+        }
       }
-      return;
+      return; // Do NOT process posture features while tracking is low/lost
+    } else {
+      this.lowConfidenceStartTime = null;
     }
 
-    if (this.currentState === 'LOW_CONFIDENCE' && ctx.confidence === 'HIGH') {
-      // Re-evaluate immediately based on current geometry
-      if (ctx.isInstantlyOutOfBounds) {
-        this.transitionTo(ctx.isSustainedDeviation ? 'CORRECTIVE' : 'DRIFTING');
+    // 2. Recovery from LOW_CONFIDENCE
+    if (this.currentState === 'LOW_CONFIDENCE' && ctx.confidence.level === 'HIGH') {
+      // Re-evaluate based on current flags
+      if (ctx.stateFlags.isCorrective) {
+        this.transitionTo('CORRECTIVE');
+      } else if (ctx.stateFlags.isDrifting) {
+        this.transitionTo('DRIFTING');
       } else {
         this.transitionTo('GOOD');
       }
       return;
     }
 
+    // 3. Process Normal State Transitions
     switch (this.currentState) {
       case 'GOOD':
-        if (ctx.isInstantlyOutOfBounds) {
+        if (ctx.stateFlags.isCorrective) {
+          this.transitionTo('CORRECTIVE');
+        } else if (ctx.stateFlags.isDrifting) {
           this.transitionTo('DRIFTING');
         }
         break;
 
       case 'DRIFTING':
-        if (!ctx.isInstantlyOutOfBounds) {
+        if (ctx.stateFlags.isRecovered) {
           this.transitionTo('GOOD');
-        } else if (ctx.isSustainedDeviation) {
+        } else if (ctx.stateFlags.isCorrective) {
           this.transitionTo('CORRECTIVE');
         }
         break;
 
       case 'CORRECTIVE':
-        if (!ctx.isInstantlyOutOfBounds) {
+        if (ctx.stateFlags.isRecovered) {
+          this.transitionTo('RECOVERING');
+        } else if (!ctx.stateFlags.isCorrective && !ctx.stateFlags.isDrifting) {
+          // If we immediately lost the corrective signal but aren't fully recovered yet, we can transition to RECOVERING
           this.transitionTo('RECOVERING');
         }
         break;
 
       case 'RECOVERING':
-        if (ctx.isInstantlyOutOfBounds) {
+        if (ctx.stateFlags.isCorrective) {
           this.transitionTo('CORRECTIVE');
-        } else if (ctx.isSustainedRecovery) {
+        } else if (ctx.stateFlags.isDrifting) {
+          this.transitionTo('DRIFTING');
+        } else if (ctx.stateFlags.isRecovered) {
           this.transitionTo('GOOD');
         }
         break;

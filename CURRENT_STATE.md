@@ -26,7 +26,18 @@ Following a comprehensive Phase 1 Audit, critical P0 and P1 defects in the audio
 - **Problem**: `PoseEngine` did not have a cleanup method. When `CameraView` unmounted, the MediaPipe WASM instance remained in memory.
 - **Fix Applied**: Added a `close()` method to `PoseEngine` which invokes `this.poseLandmarker.close()` and wired it to `CameraView`'s `useEffect` cleanup return.
 
+### 4. Posture Intelligence Hardening & Oscillation (FIXED - P1)
+- **Problem**: The system would oscillate between states rapidly, stay trapped in `CORRECTIVE` for normal posture, and instantly silence audio if the user briefly moved out of frame.
+- **Cause 1 (Oscillation)**: Transitions between states were instantaneous. A 10ms weight shift would spike the penalty and instantly trigger `DRIFTING`.
+- **Cause 2 (Trapped in Corrective)**: `TemporalFilter` used the exact same threshold for drifting and recovering, leading to boundary oscillation, constantly resetting the 1.5s recovery timer.
+- **Cause 3 (Audio Drops)**: `ConfidenceEstimator` used a binary HIGH/LOW toggle, and `PostureStateMachine` immediately transitioned to `LOW_CONFIDENCE`, instantly dropping audio gain to 0.6.
+- **Fix Applied**: 
+  1. Rewrote `TemporalFilter` to include a **Motion Gate** (calculated from feature velocity) to suppress posture penalties during rapid movement.
+  2. Implemented strict **Hysteresis** (Penalty > 120 to enter CORRECTIVE, but must drop below 70 to RECOVER).
+  3. Rewrote `ConfidenceEstimator` to output a continuous score, and gave `PostureStateMachine` a 5-second graceful degradation timeout for low confidence before mutating the state.
+  4. Built a `DiagnosticPanel` overlay (accessible via `?debug=true`) for transparent real-time debugging.
+
 ## Next Steps
-The Phase 1 Audit is fully complete. 
-The application's core logic is now mathematically defensible, structurally robust, and bug-free.
+Phase 1 & Phase 2 Audits and Posture Intelligence Hardening are fully complete. 
+The application's core logic is mathematically defensible, structurally robust, temporally smooth, and bug-free. 
 The next dependency-safe milestone is to test Capacitor/Mobile compilation and ensure RevenueCat is isolated correctly.

@@ -12,63 +12,77 @@ export interface PostureDeviations {
 export class TemporalFilter {
   private readonly smoothingFactor: number;
   private readonly driftThresholdMs: number;
+  private readonly correctiveThresholdMs: number;
   private readonly recoveryThresholdMs: number;
 
   private smoothedFeatures: PostureFeatures | null = null;
+  private lastFeatures: PostureFeatures | null = null;
+  private lastFrameTime: number | null = null;
   
   private outOfBoundsStartTime: number | null = null;
   private inBoundsStartTime: number | null = null;
 
-  // We assign a penalty score to deviations.
-  // 0-100 scale. If penalty > 100, we consider it out of bounds.
-  private readonly penaltyThreshold = 100.0;
+  // Hysteresis thresholds
+  private readonly PENALTY_DRIFT = 80.0;
+  private readonly PENALTY_CORRECTIVE = 120.0;
+  private readonly PENALTY_RECOVER = 70.0;
 
-  constructor(smoothingFactor = 0.2, driftSecs = 3.0, recoverySecs = 1.5) {
+  constructor(smoothingFactor = 0.2, driftSecs = 1.5, correctiveSecs = 3.0, recoverySecs = 2.0) {
     this.smoothingFactor = smoothingFactor;
     this.driftThresholdMs = driftSecs * 1000;
+    this.correctiveThresholdMs = correctiveSecs * 1000;
     this.recoveryThresholdMs = recoverySecs * 1000;
   }
 
   public process(current: PostureFeatures, baseline: PostureBaseline, nowMs: number): {
     smoothed: PostureFeatures,
     deviations: PostureDeviations,
-    isSustainedDeviation: boolean,
-    isSustainedRecovery: boolean,
-    isInstantlyOutOfBounds: boolean
+    motionStability: number,
+    stateFlags: {
+      isDrifting: boolean,
+      isCorrective: boolean,
+      isRecovered: boolean
+    }
   } {
-    // 1. Exponential Moving Average Smoothing
+    let dt = 16.6; // ~60fps default
+    if (this.lastFrameTime !== null) {
+      dt = Math.max(1, nowMs - this.lastFrameTime);
+    }
+    this.lastFrameTime = nowMs;
+
+    // 1. Calculate Motion Stability (Velocity of features)
+    let motionStability = 1.0;
+    if (this.lastFeatures) {
+      const tiltVel = Math.abs(current.headTilt - this.lastFeatures.headTilt) / dt;
+      const rollVel = Math.abs(current.shoulderRoll - this.lastFeatures.shoulderRoll) / dt;
+      // High velocity -> low stability
+      const totalVel = tiltVel + rollVel;
+      motionStability = Math.max(0.0, 1.0 - (totalVel * 2.0)); 
+    }
+    this.lastFeatures = { ...current };
+
+    // 2. Exponential Moving Average Smoothing
     if (!this.smoothedFeatures) {
       this.smoothedFeatures = { ...current };
     } else {
-      this.smoothedFeatures.headTilt = this.lerp(this.smoothedFeatures.headTilt, current.headTilt, this.smoothingFactor);
-      this.smoothedFeatures.shoulderRoll = this.lerp(this.smoothedFeatures.shoulderRoll, current.shoulderRoll, this.smoothingFactor);
-      this.smoothedFeatures.forwardCraneRatio = this.lerp(this.smoothedFeatures.forwardCraneRatio, current.forwardCraneRatio, this.smoothingFactor);
-      this.smoothedFeatures.neckCollapseRatio = this.lerp(this.smoothedFeatures.neckCollapseRatio, current.neckCollapseRatio, this.smoothingFactor);
-      this.smoothedFeatures.noseYawDeviation = this.lerp(this.smoothedFeatures.noseYawDeviation || 0, current.noseYawDeviation, this.smoothingFactor);
+      // Dynamic smoothing based on motion - smooth heavily if moving fast, react quickly if still
+      const dynamicSmoothing = this.lerp(0.05, this.smoothingFactor, motionStability);
+      
+      this.smoothedFeatures.headTilt = this.lerp(this.smoothedFeatures.headTilt, current.headTilt, dynamicSmoothing);
+      this.smoothedFeatures.shoulderRoll = this.lerp(this.smoothedFeatures.shoulderRoll, current.shoulderRoll, dynamicSmoothing);
+      this.smoothedFeatures.forwardCraneRatio = this.lerp(this.smoothedFeatures.forwardCraneRatio, current.forwardCraneRatio, dynamicSmoothing);
+      this.smoothedFeatures.neckCollapseRatio = this.lerp(this.smoothedFeatures.neckCollapseRatio, current.neckCollapseRatio, dynamicSmoothing);
+      this.smoothedFeatures.noseYawDeviation = this.lerp(this.smoothedFeatures.noseYawDeviation || 0, current.noseYawDeviation, dynamicSmoothing);
     }
 
-    // 2. Calculate Deviations against Baseline
+    // 3. Deviations from baseline
     const headTiltDeviation = Math.abs(this.smoothedFeatures.headTilt - baseline.features.headTilt);
     const shoulderRollDeviation = Math.abs(this.smoothedFeatures.shoulderRoll - baseline.features.shoulderRoll);
-    
-    // forward crane ratio increases when user leans forward (head gets bigger relative to shoulders)
-    // We only penalize if it gets LARGER than baseline (leaning forward).
-    const craneDiff = this.smoothedFeatures.forwardCraneRatio - baseline.features.forwardCraneRatio;
-    const craneDeviation = Math.max(0, craneDiff); 
+    const craneDeviation = Math.max(0, this.smoothedFeatures.forwardCraneRatio - baseline.features.forwardCraneRatio); 
+    const collapseDeviation = Math.max(0, baseline.features.neckCollapseRatio - this.smoothedFeatures.neckCollapseRatio);
 
-    // neck collapse ratio decreases when user slouches (ears get closer to shoulders)
-    // We only penalize if it gets SMALLER than baseline (slouching).
-    const collapseDiff = baseline.features.neckCollapseRatio - this.smoothedFeatures.neckCollapseRatio;
-    const collapseDeviation = Math.max(0, collapseDiff);
-
-    // 3. Handle Head Turn (Yaw)
-    // If the user turns their head, 2D geometric projections break down.
-    // Instead of falsely punishing them for slouching/craning, we reduce the penalty.
     const isHeadTurned = this.smoothedFeatures.noseYawDeviation > 0.3; 
     
-    // 4. Multi-signal Weighted Scoring
-    // We reduce the crane weight because 2D perspective scale changes are subtle and noisy.
-    // We increase collapse weight because ears-to-shoulder is extremely stable and highly correlated with slumping and tech-neck.
     let totalPenalty = 
       (headTiltDeviation * 10) + 
       (shoulderRollDeviation * 5) + 
@@ -76,9 +90,11 @@ export class TemporalFilter {
       (collapseDeviation * 3500);
 
     if (isHeadTurned) {
-       // Suppress geometric penalties when head is turned (user is looking at second monitor, etc)
        totalPenalty = (headTiltDeviation * 10) + (shoulderRollDeviation * 5); 
     }
+
+    // Motion Gating: if user is moving quickly (e.g. reaching), suppress penalty so it doesn't instantly jump
+    totalPenalty *= motionStability;
 
     const deviations: PostureDeviations = {
       headTiltDeviation,
@@ -88,37 +104,56 @@ export class TemporalFilter {
       totalPenalty
     };
 
-    const isOutOfBounds = totalPenalty > this.penaltyThreshold;
-
-    if (isOutOfBounds) {
+    // 4. Temporal Accumulation with Hysteresis
+    if (totalPenalty >= this.PENALTY_DRIFT) {
       this.inBoundsStartTime = null;
       if (this.outOfBoundsStartTime === null) {
         this.outOfBoundsStartTime = nowMs;
       }
-    } else {
+    } else if (totalPenalty <= this.PENALTY_RECOVER) {
       this.outOfBoundsStartTime = null;
       if (this.inBoundsStartTime === null) {
         this.inBoundsStartTime = nowMs;
       }
     }
+    // If penalty is between 70 and 80, we maintain current timers (Hysteresis middle zone)
 
-    const isSustainedDeviation = this.outOfBoundsStartTime !== null && 
-      (nowMs - this.outOfBoundsStartTime) >= this.driftThresholdMs;
+    let isDrifting = false;
+    let isCorrective = false;
+    let isRecovered = false;
 
-    const isSustainedRecovery = this.inBoundsStartTime !== null && 
-      (nowMs - this.inBoundsStartTime) >= this.recoveryThresholdMs;
+    if (this.outOfBoundsStartTime !== null) {
+      const duration = nowMs - this.outOfBoundsStartTime;
+      if (duration >= this.correctiveThresholdMs || totalPenalty >= this.PENALTY_CORRECTIVE) {
+        isCorrective = true;
+      } else if (duration >= this.driftThresholdMs) {
+        isDrifting = true;
+      }
+    }
+
+    if (this.inBoundsStartTime !== null) {
+      const duration = nowMs - this.inBoundsStartTime;
+      if (duration >= this.recoveryThresholdMs) {
+        isRecovered = true;
+      }
+    }
 
     return {
       smoothed: { ...this.smoothedFeatures },
       deviations,
-      isSustainedDeviation,
-      isSustainedRecovery,
-      isInstantlyOutOfBounds: isOutOfBounds
+      motionStability,
+      stateFlags: {
+        isDrifting,
+        isCorrective,
+        isRecovered
+      }
     };
   }
 
   public reset() {
     this.smoothedFeatures = null;
+    this.lastFeatures = null;
+    this.lastFrameTime = null;
     this.outOfBoundsStartTime = null;
     this.inBoundsStartTime = null;
   }

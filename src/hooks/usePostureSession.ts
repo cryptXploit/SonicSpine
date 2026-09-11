@@ -19,6 +19,13 @@ export function usePostureSession() {
   const audioEngineRef = useRef<AudioEngine>(new AudioEngine());
   const sessionManagerRef = useRef<SessionManager>(new SessionManager());
 
+  // Diagnostic refs (avoiding state to prevent thrashing)
+  const lastDiagnosticConfidence = useRef<import('../vision/ConfidenceEstimator').ConfidenceResult | null>(null);
+  const lastDiagnosticFeatures = useRef<PostureFeatures | null>(null);
+  const lastDiagnosticDeviations = useRef<import('../posture/TemporalFilter').PostureDeviations | null>(null);
+  const lastDiagnosticMotion = useRef<number>(1.0);
+  const lastDiagnosticFlags = useRef({ isDrifting: false, isCorrective: false, isRecovered: false });
+
   const stateMachineRef = useRef<PostureStateMachine>(new PostureStateMachine((newState) => {
     setAppState(newState);
     audioEngineRef.current.updateState(newState);
@@ -48,13 +55,13 @@ export function usePostureSession() {
   const handlePoseUpdate = useCallback((
     _landmarks: PostureLandmarks | null, 
     features: PostureFeatures | null, 
-    confidence: 'HIGH' | 'LOW' | 'NONE'
+    confidence: import('../vision/ConfidenceEstimator').ConfidenceResult
   ) => {
     const sm = stateMachineRef.current;
     const currentState = sm.getState();
 
     if (currentState === 'CALIBRATING') {
-      if (confidence === 'HIGH' && features) {
+      if (confidence.level === 'HIGH' && features) {
         setCalibrationError('');
         engineRef.current.addSample(features);
         setCalibrationProgress(engineRef.current.getProgress());
@@ -72,28 +79,35 @@ export function usePostureSession() {
             setCalibrationProgress(0);
           }
         }
-      } else if (confidence === 'LOW') {
+      } else if (confidence.level === 'LOW') {
         setCalibrationError('Low confidence. Please ensure you are clearly visible.');
       }
       return;
     }
 
-    if (baseline && features && confidence === 'HIGH') {
-      const { isInstantlyOutOfBounds, isSustainedDeviation, isSustainedRecovery } = 
-        filterRef.current.process(features, baseline, performance.now());
+    if (baseline && features && confidence.level === 'HIGH') {
+      const { stateFlags, deviations, motionStability } = filterRef.current.process(features, baseline, performance.now());
       
+      lastDiagnosticConfidence.current = confidence;
+      lastDiagnosticFeatures.current = features;
+      lastDiagnosticDeviations.current = deviations;
+      lastDiagnosticMotion.current = motionStability;
+      lastDiagnosticFlags.current = stateFlags;
+
       sm.processFrame({
         confidence,
-        isInstantlyOutOfBounds,
-        isSustainedDeviation,
-        isSustainedRecovery
+        stateFlags
       });
     } else {
+      lastDiagnosticConfidence.current = confidence;
+      lastDiagnosticFeatures.current = features;
+      lastDiagnosticDeviations.current = null;
+      lastDiagnosticMotion.current = 1.0;
+      lastDiagnosticFlags.current = { isDrifting: false, isCorrective: false, isRecovered: false };
+
       sm.processFrame({
-        confidence: confidence,
-        isInstantlyOutOfBounds: false,
-        isSustainedDeviation: false,
-        isSustainedRecovery: false
+        confidence,
+        stateFlags: lastDiagnosticFlags.current
       });
     }
   }, [baseline]);
@@ -143,6 +157,14 @@ export function usePostureSession() {
     startCalibration,
     stopSession,
     resetCalibration,
-    clearSummary
+    clearSummary,
+    getDiagnostics: () => ({
+      state: stateMachineRef.current.getState(),
+      confidence: lastDiagnosticConfidence.current,
+      features: lastDiagnosticFeatures.current,
+      deviations: lastDiagnosticDeviations.current,
+      motionStability: lastDiagnosticMotion.current,
+      stateFlags: lastDiagnosticFlags.current
+    })
   };
 }

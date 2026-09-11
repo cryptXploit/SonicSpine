@@ -1,105 +1,103 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { PostureStateMachine, StateContext } from './PostureStateMachine';
+import { ConfidenceResult } from '../vision/ConfidenceEstimator';
 
 describe('PostureStateMachine', () => {
+  let sm: PostureStateMachine;
+  let onStateChange: (state: string) => void;
+  const highConf: ConfidenceResult = { level: 'HIGH', score: 0.9 };
+  const lowConf: ConfidenceResult = { level: 'LOW', score: 0.3 };
+
+  beforeEach(() => {
+    onStateChange = vi.fn();
+    sm = new PostureStateMachine(onStateChange as any);
+  });
+
   const createCtx = (overrides: Partial<StateContext> = {}): StateContext => ({
-    confidence: 'HIGH',
-    isInstantlyOutOfBounds: false,
-    isSustainedDeviation: false,
-    isSustainedRecovery: false,
+    confidence: highConf,
+    stateFlags: {
+      isDrifting: false,
+      isCorrective: false,
+      isRecovered: false
+    },
     ...overrides
   });
 
-  it('initializes in BOOT state', () => {
-    const sm = new PostureStateMachine();
-    expect(sm.getState()).toBe('BOOT');
-  });
+  describe('Initialization and Calibration', () => {
+    it('starts in BOOT state', () => {
+      expect(sm.getState()).toBe('BOOT');
+    });
 
-  it('progresses through setup flow', () => {
-    const sm = new PostureStateMachine();
-    sm.triggerCameraReady();
-    expect(sm.getState()).toBe('CAMERA_READY');
-    
-    sm.startCalibration();
-    expect(sm.getState()).toBe('CALIBRATING');
-    
-    sm.finishCalibration();
-    expect(sm.getState()).toBe('GOOD'); // Skips to active tracking
-  });
+    it('transitions BOOT -> CAMERA_READY -> CALIBRATING -> READY -> GOOD', () => {
+      sm.triggerCameraReady();
+      expect(sm.getState()).toBe('CAMERA_READY');
 
-  it('triggers callback on state change', () => {
-    const cb = vi.fn();
-    const sm = new PostureStateMachine(cb);
-    sm.triggerCameraReady();
-    expect(cb).toHaveBeenCalledWith('CAMERA_READY');
+      sm.startCalibration();
+      expect(sm.getState()).toBe('CALIBRATING');
+
+      sm.finishCalibration();
+      expect(sm.getState()).toBe('GOOD'); // It goes READY -> GOOD immediately
+    });
   });
 
   describe('Active Tracking Flow', () => {
-    it('drifts and corrects', () => {
-      const sm = new PostureStateMachine();
+    beforeEach(() => {
       sm.triggerCameraReady();
       sm.startCalibration();
-      sm.finishCalibration(); // state is GOOD
+      sm.finishCalibration(); // state is now GOOD
+    });
 
-      // Instant deviation triggers DRIFTING
-      sm.processFrame(createCtx({ isInstantlyOutOfBounds: true }));
+    it('drifts and corrects', () => {
+      // 1. Enter Drifting
+      sm.processFrame(createCtx({ stateFlags: { isDrifting: true, isCorrective: false, isRecovered: false } }));
       expect(sm.getState()).toBe('DRIFTING');
 
-      // Sustained deviation triggers CORRECTIVE
-      sm.processFrame(createCtx({ isInstantlyOutOfBounds: true, isSustainedDeviation: true }));
+      // 2. Enter Corrective
+      sm.processFrame(createCtx({ stateFlags: { isDrifting: true, isCorrective: true, isRecovered: false } }));
       expect(sm.getState()).toBe('CORRECTIVE');
 
-      // Coming back in bounds triggers RECOVERING
-      sm.processFrame(createCtx({ isInstantlyOutOfBounds: false, isSustainedDeviation: true }));
+      // 3. Enter Recovering
+      sm.processFrame(createCtx({ stateFlags: { isDrifting: false, isCorrective: false, isRecovered: false } }));
       expect(sm.getState()).toBe('RECOVERING');
 
-      // Holding it triggers GOOD
-      sm.processFrame(createCtx({ isInstantlyOutOfBounds: false, isSustainedRecovery: true }));
+      // 4. Return to Good
+      sm.processFrame(createCtx({ stateFlags: { isDrifting: false, isCorrective: false, isRecovered: true } }));
       expect(sm.getState()).toBe('GOOD');
     });
 
     it('returns to GOOD if drift is not sustained (quick movement)', () => {
-      const sm = new PostureStateMachine();
-      sm.triggerCameraReady();
-      sm.startCalibration();
-      sm.finishCalibration();
-
-      sm.processFrame(createCtx({ isInstantlyOutOfBounds: true }));
+      // Temporarily drift
+      sm.processFrame(createCtx({ stateFlags: { isDrifting: true, isCorrective: false, isRecovered: false } }));
       expect(sm.getState()).toBe('DRIFTING');
 
-      sm.processFrame(createCtx({ isInstantlyOutOfBounds: false }));
-      expect(sm.getState()).toBe('GOOD'); // False alarm
+      // But recovered before CORRECTIVE
+      sm.processFrame(createCtx({ stateFlags: { isDrifting: false, isCorrective: false, isRecovered: true } }));
+      expect(sm.getState()).toBe('GOOD');
     });
 
     it('returns to CORRECTIVE if recovering but drops back out', () => {
-      const sm = new PostureStateMachine();
-      sm.triggerCameraReady();
-      sm.startCalibration();
-      sm.finishCalibration();
-
-      sm.processFrame(createCtx({ isInstantlyOutOfBounds: true }));
-      sm.processFrame(createCtx({ isInstantlyOutOfBounds: true, isSustainedDeviation: true })); // jumps to CORRECTIVE
+      sm.processFrame(createCtx({ stateFlags: { isDrifting: true, isCorrective: true, isRecovered: false } }));
       expect(sm.getState()).toBe('CORRECTIVE');
 
-      sm.processFrame(createCtx({ isInstantlyOutOfBounds: false }));
+      sm.processFrame(createCtx({ stateFlags: { isDrifting: false, isCorrective: false, isRecovered: false } }));
       expect(sm.getState()).toBe('RECOVERING');
 
-      // Oops, slouched again
-      sm.processFrame(createCtx({ isInstantlyOutOfBounds: true }));
+      // Drops back out
+      sm.processFrame(createCtx({ stateFlags: { isDrifting: true, isCorrective: true, isRecovered: false } }));
       expect(sm.getState()).toBe('CORRECTIVE');
     });
 
-    it('handles LOW_CONFIDENCE gracefully', () => {
-      const sm = new PostureStateMachine();
-      sm.triggerCameraReady();
-      sm.startCalibration();
-      sm.finishCalibration();
+    it('handles LOW_CONFIDENCE gracefully with a timeout', () => {
+      // Should ignore first low confidence frame (state stays GOOD)
+      sm.processFrame(createCtx({ confidence: lowConf }), 0);
+      expect(sm.getState()).toBe('GOOD');
 
-      sm.processFrame(createCtx({ confidence: 'LOW' }));
+      // Fast forward 5001ms
+      sm.processFrame(createCtx({ confidence: lowConf }), 5001);
       expect(sm.getState()).toBe('LOW_CONFIDENCE');
 
-      // Recovers directly to GOOD if everything is fine
-      sm.processFrame(createCtx({ confidence: 'HIGH', isInstantlyOutOfBounds: false }));
+      // Recover
+      sm.processFrame(createCtx({ confidence: highConf }), 5002);
       expect(sm.getState()).toBe('GOOD');
     });
   });

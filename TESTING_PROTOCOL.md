@@ -493,3 +493,29 @@ Never report a benchmark without methodology.
 Never hide failed tests.
 
 Never convert an assumption into a test result.
+
+---
+
+# 23. False-Positive Regression Protocols (Phase 2)
+
+To verify the stabilization of the posture intelligence, the following 12 manual tests must be periodically re-verified:
+
+### Movement Gates (FP-001 to FP-003)
+- **FP-001**: Look down at keyboard. (Must not trigger CORRECTIVE. Rely on `earMidY` calculation).
+- **FP-002**: Turn head to the left/right monitor. (Must not trigger CORRECTIVE. Rely on `noseYawDeviation` penalty suppression).
+- **FP-003**: Reach forward rapidly to grab a cup/mouse. (Must not trigger CORRECTIVE. Rely on `motionStability` velocity suppression).
+
+### Oscillation & Hysteresis (FP-004 to FP-006)
+- **FP-004**: Hover exactly on the boundary of slumping. (Audio must not jitter. Must stably transition into DRIFTING only after 120 penalty, and not recover until below 70).
+- **FP-005**: Enter CORRECTIVE, then sit perfectly straight for 1 second, then slightly slouch again. (Must remain in CORRECTIVE or RECOVERING until the full 2.0s recovery timer completes).
+- **FP-006**: Lean forward for 1.0 second, then return. (Must not enter DRIFTING. Suppressed by 1.5s `driftThresholdMs`).
+
+### Low-Confidence Handling (FP-007 to FP-009)
+- **FP-007**: Lean partially out of the frame so one shoulder vanishes for 2 seconds, then return. (Audio MUST NOT Muffle. State must hold. Suppressed by 5.0s `LOW_CONFIDENCE_TIMEOUT_MS`).
+- **FP-008**: Leave the frame entirely for 6 seconds. (State must transition to `LOW_CONFIDENCE`. UI must show warning. Audio must muffle).
+- **FP-009**: Return to frame after FP-008. (Audio must restore. State must transition based on immediate posture geometry, not reset to GOOD blindly).
+
+### Diagnostic Mode (FP-010 to FP-012)
+- **FP-010**: Append `?debug=true` to the URL. (DiagnosticPanel must mount).
+- **FP-011**: Observe DiagnosticPanel while reaching forward. (`Motion Stb` should drop below 1.0).
+- **FP-012**: Observe DiagnosticPanel while turning head. (`Yaw` should exceed 0.3, `Penalty` should not spike).

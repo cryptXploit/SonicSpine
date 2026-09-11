@@ -3,6 +3,7 @@ import { CameraView } from './components/CameraView/CameraView';
 import { db } from './storage/Database';
 import { Dashboard } from './components/Dashboard/Dashboard';
 import { usePostureSession } from './hooks/usePostureSession';
+import { DiagnosticPanel } from './components/DiagnosticPanel/DiagnosticPanel';
 
 function App() {
   const {
@@ -16,7 +17,8 @@ function App() {
     startCalibration,
     stopSession,
     resetCalibration,
-    clearSummary
+    clearSummary,
+    getDiagnostics
   } = usePostureSession();
 
   const [isPlaying, setIsPlaying] = useState(false);
@@ -307,8 +309,35 @@ function App() {
 
   return (
     <>
+      {window.location.search.includes('debug=true') && (
+        <DiagnosticOverlay getDiagnostics={getDiagnostics} />
+      )}
       {renderContent()}
     </>
+  );
+}
+
+function DiagnosticOverlay({ getDiagnostics }: { getDiagnostics: any }) {
+  const [data, setData] = useState<any>(null);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setData(getDiagnostics());
+    }, 100);
+    return () => clearInterval(interval);
+  }, [getDiagnostics]);
+
+  if (!data) return null;
+
+  return (
+    <DiagnosticPanel 
+      state={data.state}
+      confidence={data.confidence}
+      features={data.features}
+      deviations={data.deviations}
+      motionStability={data.motionStability || 1.0}
+      stateFlags={data.stateFlags || { isDrifting: false, isCorrective: false, isRecovered: false }}
+    />
   );
 }
 
