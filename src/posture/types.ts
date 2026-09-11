@@ -5,9 +5,12 @@ export interface PostureFeatures {
   /** Angle of the line connecting left and right ear in degrees. 0 is perfectly level. */
   headTilt: number;
   
-  /** Relative Z depth difference between the head and the shoulders. Negative values typically mean the head is closer to the camera. */
+  /** Relative scale between head and shoulders to determine forward lean */
   forwardCraneRatio: number;
   
-  /** Normalized 2D Euclidean distance between left and right shoulders. Useful as a scale reference. */
+  /** Distance from ears to shoulders, normalized by shoulder width */
   neckCollapseRatio: number;
+
+  /** Absolute deviation of nose from center of ears, to detect head turn */
+  noseYawDeviation: number;
 }

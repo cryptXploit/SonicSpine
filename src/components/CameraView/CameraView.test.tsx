@@ -7,6 +7,7 @@ vi.mock('../../vision/PoseEngine', () => {
     PoseEngine: class {
       initialize = vi.fn().mockResolvedValue(true);
       detect = vi.fn().mockReturnValue(null);
+      close = vi.fn();
       get isModelReady() { return true; }
     }
   };

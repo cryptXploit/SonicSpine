@@ -8,7 +8,8 @@ describe('TemporalFilter', () => {
     headTilt: tilt,
     shoulderRoll: roll,
     forwardCraneRatio: crane,
-    neckCollapseRatio: collapse
+    neckCollapseRatio: collapse,
+    noseYawDeviation: 0
   });
 
   const baseline: PostureBaseline = {

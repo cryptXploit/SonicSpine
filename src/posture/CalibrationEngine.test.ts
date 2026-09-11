@@ -7,7 +7,8 @@ describe('CalibrationEngine', () => {
     headTilt: tilt,
     shoulderRoll: roll,
     forwardCraneRatio: crane,
-    neckCollapseRatio: collapse
+    neckCollapseRatio: collapse,
+    noseYawDeviation: 0
   });
 
   it('initializes with 0 progress', () => {

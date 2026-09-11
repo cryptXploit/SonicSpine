@@ -44,6 +44,7 @@ export class TemporalFilter {
       this.smoothedFeatures.shoulderRoll = this.lerp(this.smoothedFeatures.shoulderRoll, current.shoulderRoll, this.smoothingFactor);
       this.smoothedFeatures.forwardCraneRatio = this.lerp(this.smoothedFeatures.forwardCraneRatio, current.forwardCraneRatio, this.smoothingFactor);
       this.smoothedFeatures.neckCollapseRatio = this.lerp(this.smoothedFeatures.neckCollapseRatio, current.neckCollapseRatio, this.smoothingFactor);
+      this.smoothedFeatures.noseYawDeviation = this.lerp(this.smoothedFeatures.noseYawDeviation || 0, current.noseYawDeviation, this.smoothingFactor);
     }
 
     // 2. Calculate Deviations against Baseline
@@ -55,21 +56,29 @@ export class TemporalFilter {
     const craneDiff = this.smoothedFeatures.forwardCraneRatio - baseline.features.forwardCraneRatio;
     const craneDeviation = Math.max(0, craneDiff); 
 
-    // neck collapse ratio decreases when user slouches (nose gets closer to shoulders)
+    // neck collapse ratio decreases when user slouches (ears get closer to shoulders)
     // We only penalize if it gets SMALLER than baseline (slouching).
     const collapseDiff = baseline.features.neckCollapseRatio - this.smoothedFeatures.neckCollapseRatio;
     const collapseDeviation = Math.max(0, collapseDiff);
 
-    // 3. Multi-signal Weighted Scoring
-    // 1 degree of tilt = ~10 penalty
-    // 1 degree of roll = ~5 penalty
-    // 0.01 crane deviation = ~20 penalty
-    // 0.01 collapse deviation = ~25 penalty
-    const totalPenalty = 
+    // 3. Handle Head Turn (Yaw)
+    // If the user turns their head, 2D geometric projections break down.
+    // Instead of falsely punishing them for slouching/craning, we reduce the penalty.
+    const isHeadTurned = this.smoothedFeatures.noseYawDeviation > 0.3; 
+    
+    // 4. Multi-signal Weighted Scoring
+    // We reduce the crane weight because 2D perspective scale changes are subtle and noisy.
+    // We increase collapse weight because ears-to-shoulder is extremely stable and highly correlated with slumping and tech-neck.
+    let totalPenalty = 
       (headTiltDeviation * 10) + 
       (shoulderRollDeviation * 5) + 
-      (craneDeviation * 2000) + 
-      (collapseDeviation * 2500);
+      (craneDeviation * 1000) + 
+      (collapseDeviation * 3500);
+
+    if (isHeadTurned) {
+       // Suppress geometric penalties when head is turned (user is looking at second monitor, etc)
+       totalPenalty = (headTiltDeviation * 10) + (shoulderRollDeviation * 5); 
+    }
 
     const deviations: PostureDeviations = {
       headTiltDeviation,

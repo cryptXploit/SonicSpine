@@ -145,6 +145,7 @@ export function CameraView({ onStreamReady, onPoseUpdate }: CameraViewProps) {
     return () => {
       if (activeStream) activeStream.getTracks().forEach((track) => track.stop());
       if (animationFrameId) cancelAnimationFrame(animationFrameId);
+      if (engineRef.current) engineRef.current.close();
     };
   }, []);
 

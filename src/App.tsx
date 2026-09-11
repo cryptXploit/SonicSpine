@@ -36,10 +36,7 @@ function App() {
   }, [volume]);
 
   const handleStartSession = async () => {
-    // 1. Initialize calibration/session logic
-    await startCalibration();
-    
-    // 2. Play audio immediately on user interaction to satisfy browser autoplay policies
+    // 1. Play audio immediately on user interaction to satisfy browser autoplay policies
     if (audioRef.current) {
       try {
         await audioRef.current.play();
@@ -48,6 +45,9 @@ function App() {
         console.error("Audio playback failed. Please interact with the page.", err);
       }
     }
+    
+    // 2. Initialize calibration/session logic
+    await startCalibration();
   };
 
   const handleStopSession = async () => {
@@ -128,117 +128,108 @@ function App() {
     return `${m}m ${s}s`;
   };
 
-  if (sessionSummary) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-slate-50 p-6 font-sans text-slate-800">
-        <div className="w-full max-w-sm bg-white shadow-2xl rounded-[2rem] p-8 text-center border border-slate-100">
-          <div className="w-16 h-16 bg-emerald-100 text-emerald-500 rounded-full flex items-center justify-center mx-auto mb-6">
-            <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-          </div>
-          <h2 className="text-2xl font-bold mb-2 text-slate-800">Session Complete</h2>
-          <p className="text-slate-500 mb-8 text-sm">Great job staying focused.</p>
-          
-          <div className="grid grid-cols-2 gap-4 text-left mb-8">
-            <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
-              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Consistency</p>
-              <p className="text-3xl font-bold text-emerald-500">{sessionSummary.healthScore}%</p>
+  const renderContent = () => {
+    if (sessionSummary) {
+      return (
+        <div className="flex flex-col items-center justify-center min-h-screen bg-slate-50 p-6 font-sans text-slate-800">
+          <div className="w-full max-w-sm bg-white shadow-2xl rounded-[2rem] p-8 text-center border border-slate-100">
+            <div className="w-16 h-16 bg-emerald-100 text-emerald-500 rounded-full flex items-center justify-center mx-auto mb-6">
+              <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
             </div>
-            <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
-              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Duration</p>
-              <p className="text-2xl font-bold text-slate-700">{formatTime(sessionSummary.totalSessionDurationMs)}</p>
-            </div>
-            <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
-              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">In Zone</p>
-              <p className="text-xl font-bold text-slate-700">{formatTime(sessionSummary.timeInGoodMs)}</p>
-            </div>
-            <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
-              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Drifts</p>
-              <p className="text-xl font-bold text-slate-700">{sessionSummary.deviationCount}</p>
-            </div>
-          </div>
-          <button 
-            onClick={clearSummary}
-            className="w-full py-4 bg-slate-900 hover:bg-slate-800 text-white font-semibold rounded-xl shadow-lg transition active:scale-[0.98]"
-          >
-            Done
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  // --- HOME / SETUP STATE ---
-  if (!baseline) {
-    return (
-      <div className="flex flex-col items-center min-h-screen bg-slate-50 p-4 sm:p-6 font-sans text-slate-800 pb-24">
-        <audio ref={audioRef} loop crossOrigin="anonymous">
-          <source src="https://cdn.pixabay.com/download/audio/2022/05/16/audio_9b9e5f39df.mp3?filename=ambient-piano-amp-strings-10711.mp3" type="audio/mpeg" />
-        </audio>
-
-        <header className="w-full max-w-md mt-4 mb-8 text-center">
-          <h1 className="text-2xl font-extrabold tracking-tight text-slate-900">
-            SONICSPINE
-          </h1>
-          <p className="text-sm text-slate-500 mt-2 font-medium">Good posture starts with your baseline.</p>
-        </header>
-
-        <main className="w-full max-w-md flex flex-col gap-6">
-          <div className="bg-white p-4 rounded-[2rem] shadow-xl shadow-slate-200/50 border border-slate-100">
+            <h2 className="text-2xl font-bold mb-2 text-slate-800">Session Complete</h2>
+            <p className="text-slate-500 mb-8 text-sm">Great job staying focused.</p>
             
-            <div className="w-full aspect-[4/3] rounded-2xl overflow-hidden bg-slate-900 relative">
-              <CameraView onPoseUpdate={handlePoseUpdate} />
-              
-              {/* Calibration Overlay */}
-              {appState === 'CALIBRATING' && (
-                <div className="absolute inset-0 z-20 bg-slate-900/60 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center">
-                  <div className="w-16 h-16 rounded-full border-4 border-slate-700 border-t-emerald-500 animate-spin mb-4"></div>
-                  <p className="text-white font-medium mb-4">{getStatusSubtext()}</p>
-                  <div className="w-full max-w-[200px] bg-slate-800 rounded-full h-2 overflow-hidden">
-                    <div 
-                      className="bg-emerald-500 h-full transition-all duration-100 ease-out" 
-                      style={{ width: `${calibrationProgress * 100}%` }}
-                    />
-                  </div>
-                </div>
-              )}
+            <div className="grid grid-cols-2 gap-4 text-left mb-8">
+              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Consistency</p>
+                <p className="text-3xl font-bold text-emerald-500">{sessionSummary.healthScore}%</p>
+              </div>
+              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Duration</p>
+                <p className="text-2xl font-bold text-slate-700">{formatTime(sessionSummary.totalSessionDurationMs)}</p>
+              </div>
+              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">In Zone</p>
+                <p className="text-xl font-bold text-slate-700">{formatTime(sessionSummary.timeInGoodMs)}</p>
+              </div>
+              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Drifts</p>
+                <p className="text-xl font-bold text-slate-700">{sessionSummary.deviationCount}</p>
+              </div>
             </div>
-
-            <div className="mt-6 flex flex-col gap-4">
-              {calibrationError ? (
-                <div className="p-3 bg-rose-50 text-rose-600 rounded-xl text-sm font-medium text-center">
-                  {calibrationError}
-                </div>
-              ) : (
-                <div className="text-center">
-                  <p className="text-sm font-semibold text-slate-700">{appState === 'CAMERA_READY' ? 'Camera Ready' : appState}</p>
-                  <p className="text-xs text-slate-500 mt-1">{getStatusSubtext()}</p>
-                </div>
-              )}
-
-              <button 
-                onClick={handleStartSession}
-                disabled={appState === 'BOOT' || appState === 'CALIBRATING'}
-                className="w-full py-4 bg-emerald-500 disabled:bg-slate-300 hover:bg-emerald-600 text-white font-bold rounded-xl shadow-lg transition active:scale-[0.98]"
-              >
-                Calibrate & Start Session
-              </button>
-            </div>
+            <button 
+              onClick={clearSummary}
+              className="w-full py-4 bg-slate-900 hover:bg-slate-800 text-white font-semibold rounded-xl shadow-lg transition active:scale-[0.98]"
+            >
+              Done
+            </button>
           </div>
+        </div>
+      );
+    }
 
-          <Dashboard />
-        </main>
-      </div>
-    );
-  }
+    if (!baseline) {
+      return (
+        <div className="flex flex-col items-center min-h-screen bg-slate-50 p-4 sm:p-6 font-sans text-slate-800 pb-24">
+          <header className="w-full max-w-md mt-4 mb-8 text-center">
+            <h1 className="text-2xl font-extrabold tracking-tight text-slate-900">
+              SONICSPINE
+            </h1>
+            <p className="text-sm text-slate-500 mt-2 font-medium">Good posture starts with your baseline.</p>
+          </header>
 
-  // --- FOCUS SESSION STATE ---
-  return (
-    <div className="flex flex-col items-center min-h-screen bg-slate-50 p-4 sm:p-6 font-sans text-slate-800">
-      <audio ref={audioRef} loop crossOrigin="anonymous">
-        <source src="https://cdn.pixabay.com/download/audio/2022/05/16/audio_9b9e5f39df.mp3?filename=ambient-piano-amp-strings-10711.mp3" type="audio/mpeg" />
-      </audio>
+          <main className="w-full max-w-md flex flex-col gap-6">
+            <div className="bg-white p-4 rounded-[2rem] shadow-xl shadow-slate-200/50 border border-slate-100">
+              
+              <div className="w-full aspect-[4/3] rounded-2xl overflow-hidden bg-slate-900 relative">
+                <CameraView onPoseUpdate={handlePoseUpdate} />
+                
+                {/* Calibration Overlay */}
+                {appState === 'CALIBRATING' && (
+                  <div className="absolute inset-0 z-20 bg-slate-900/60 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center">
+                    <div className="w-16 h-16 rounded-full border-4 border-slate-700 border-t-emerald-500 animate-spin mb-4"></div>
+                    <p className="text-white font-medium mb-4">{getStatusSubtext()}</p>
+                    <div className="w-full max-w-[200px] bg-slate-800 rounded-full h-2 overflow-hidden">
+                      <div 
+                        className="bg-emerald-500 h-full transition-all duration-100 ease-out" 
+                        style={{ width: `${calibrationProgress * 100}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
 
-      <header className="w-full max-w-md mt-4 mb-6 flex justify-between items-center px-2">
+              <div className="mt-6 flex flex-col gap-4">
+                {calibrationError ? (
+                  <div className="p-3 bg-rose-50 text-rose-600 rounded-xl text-sm font-medium text-center">
+                    {calibrationError}
+                  </div>
+                ) : (
+                  <div className="text-center">
+                    <p className="text-sm font-semibold text-slate-700">{appState === 'CAMERA_READY' ? 'Camera Ready' : appState}</p>
+                    <p className="text-xs text-slate-500 mt-1">{getStatusSubtext()}</p>
+                  </div>
+                )}
+
+                <button 
+                  onClick={handleStartSession}
+                  disabled={appState === 'BOOT' || appState === 'CALIBRATING'}
+                  className="w-full py-4 bg-emerald-500 disabled:bg-slate-300 hover:bg-emerald-600 text-white font-bold rounded-xl shadow-lg transition active:scale-[0.98]"
+                >
+                  Calibrate & Start Session
+                </button>
+              </div>
+            </div>
+
+            <Dashboard />
+          </main>
+        </div>
+      );
+    }
+
+    return (
+      <div className="flex flex-col items-center min-h-screen bg-slate-50 p-4 sm:p-6 font-sans text-slate-800">
+        <header className="w-full max-w-md mt-4 mb-6 flex justify-between items-center px-2">
         <h1 className="text-xl font-extrabold tracking-tight text-slate-900">
           SONICSPINE
         </h1>
@@ -330,9 +321,18 @@ function App() {
         >
           Recalibrate Baseline
         </button>
-
       </main>
     </div>
+    );
+  };
+
+  return (
+    <>
+      <audio ref={audioRef} loop>
+        <source src="/ambient.wav" type="audio/wav" />
+      </audio>
+      {renderContent()}
+    </>
   );
 }
 

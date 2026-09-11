@@ -51,4 +51,12 @@ export class PoseEngine {
   public get isModelReady() {
     return this.isReady;
   }
+
+  public close() {
+    if (this.poseLandmarker) {
+      this.poseLandmarker.close();
+      this.poseLandmarker = null;
+    }
+    this.isReady = false;
+  }
 }

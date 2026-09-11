@@ -33,15 +33,17 @@ export class CalibrationEngine {
       shoulderRoll: acc.shoulderRoll + curr.shoulderRoll,
       headTilt: acc.headTilt + curr.headTilt,
       forwardCraneRatio: acc.forwardCraneRatio + curr.forwardCraneRatio,
-      neckCollapseRatio: acc.neckCollapseRatio + curr.neckCollapseRatio
-    }), { shoulderRoll: 0, headTilt: 0, forwardCraneRatio: 0, neckCollapseRatio: 0 });
+      neckCollapseRatio: acc.neckCollapseRatio + curr.neckCollapseRatio,
+      noseYawDeviation: acc.noseYawDeviation + curr.noseYawDeviation
+    }), { shoulderRoll: 0, headTilt: 0, forwardCraneRatio: 0, neckCollapseRatio: 0, noseYawDeviation: 0 });
 
     const n = this.samples.length;
     const avg: PostureFeatures = {
       shoulderRoll: sum.shoulderRoll / n,
       headTilt: sum.headTilt / n,
       forwardCraneRatio: sum.forwardCraneRatio / n,
-      neckCollapseRatio: sum.neckCollapseRatio / n
+      neckCollapseRatio: sum.neckCollapseRatio / n,
+      noseYawDeviation: sum.noseYawDeviation / n
     };
 
     // Calculate variance (measure of stability)
