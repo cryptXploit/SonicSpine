@@ -15,7 +15,7 @@ export function usePostureSession() {
   const [sessionSummary, setSessionSummary] = useState<SessionAnalytics | null>(null);
 
   const engineRef = useRef<CalibrationEngine>(new CalibrationEngine(30, 200));
-  const filterRef = useRef<TemporalFilter>(new TemporalFilter(0.2, 3.0, 1.5));
+  const filterRef = useRef<TemporalFilter>(new TemporalFilter(0.2));
   const audioEngineRef = useRef<AudioEngine>(new AudioEngine());
   const sessionManagerRef = useRef<SessionManager>(new SessionManager());
 

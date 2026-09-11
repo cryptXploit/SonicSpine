@@ -37,7 +37,17 @@ Following a comprehensive Phase 1 Audit, critical P0 and P1 defects in the audio
   3. Rewrote `ConfidenceEstimator` to output a continuous score, and gave `PostureStateMachine` a 5-second graceful degradation timeout for low confidence before mutating the state.
   4. Built a `DiagnosticPanel` overlay (accessible via `?debug=true`) for transparent real-time debugging.
 
+### 5. Capacitor & Android Foundation (M13 - COMPLETE)
+- **Status**: The Android Capacitor wrapper has been successfully generated (`android/` folder).
+- **Permissions**: `android.permission.CAMERA` and `android.permission.RECORD_AUDIO` have been injected into the `AndroidManifest.xml` to ensure WebRTC functionality in the native WebView.
+- **Action Required**: You must now run `npx cap open android` and build the APK via Android Studio to test the WebView bindings on a real device.
+
+### 6. RevenueCat Isolation & Monetization (M14 - COMPLETE)
+- **Status**: `@revenuecat/purchases-capacitor` is installed.
+- **Architecture**: Implemented an explicit `EntitlementService` interface and a `RevenueCatAdapter` implementation to isolate the dashboard UI from direct SDK calls.
+- **Safety**: No hardcoded API keys exist. The SDK reads from `import.meta.env.VITE_REVENUECAT_PUBLIC_KEY`. A `.env.example` has been provided.
+- **Graceful Fallback**: The adapter checks `Capacitor.isNativePlatform()`. If the app is run on the web, it gracefully falls back to a mocked `FREE` state and avoids crashing or spamming console errors.
+
 ## Next Steps
-Phase 1 & Phase 2 Audits and Posture Intelligence Hardening are fully complete. 
-The application's core logic is mathematically defensible, structurally robust, temporally smooth, and bug-free. 
-The next dependency-safe milestone is to test Capacitor/Mobile compilation and ensure RevenueCat is isolated correctly.
+Phases 1 through 14 are complete. The core engine is mathematically sound, and the Android/Monetization scaffolding is safely integrated.
+The final remaining milestone is **M15 & M16: Scientific Manual Testing & Final QA**, which involves running the build on an actual Android device and verifying the RevenueCat test purchase flow.

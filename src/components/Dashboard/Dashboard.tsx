@@ -1,16 +1,22 @@
 import { useEffect, useState } from 'react';
 import { db } from '../../storage/Database';
 import { SessionAnalytics } from '../../analytics/SessionManager';
+import { entitlementService } from '../../monetization/RevenueCatAdapter';
+import { EntitlementStatus } from '../../monetization/EntitlementService';
 
 export function Dashboard() {
   const [sessions, setSessions] = useState<SessionAnalytics[]>([]);
   const [loading, setLoading] = useState(true);
+  const [entitlement, setEntitlement] = useState<EntitlementStatus>('UNKNOWN');
+  const [isPurchasing, setIsPurchasing] = useState(false);
 
   useEffect(() => {
     const loadData = async () => {
       try {
         const data = await db.getRecentSessions(10);
         setSessions(data); // Already descending
+        const status = await entitlementService.checkEntitlement();
+        setEntitlement(status);
       } catch (e) {
         console.error("Failed to load dashboard data", e);
       } finally {
@@ -19,6 +25,26 @@ export function Dashboard() {
     };
     loadData();
   }, []);
+
+  const handleUpgrade = async () => {
+    setIsPurchasing(true);
+    const success = await entitlementService.purchasePro();
+    if (success) {
+      setEntitlement('PRO');
+    }
+    setIsPurchasing(false);
+  };
+
+  const handleRestore = async () => {
+    setIsPurchasing(true);
+    const success = await entitlementService.restorePurchases();
+    if (success) {
+      setEntitlement('PRO');
+    } else {
+      alert("No active purchases found to restore.");
+    }
+    setIsPurchasing(false);
+  };
 
   if (loading) {
     return (
@@ -77,6 +103,31 @@ export function Dashboard() {
           ))}
         </div>
       </div>
+
+      {/* RevenueCat PRO Banner */}
+      {entitlement !== 'PRO' && (
+        <div className="bg-gradient-to-br from-slate-900 to-slate-800 rounded-[2rem] shadow-lg shadow-slate-900/20 p-6 text-center mt-2 relative overflow-hidden">
+          <div className="absolute top-0 right-0 p-4 opacity-10">
+            <svg className="w-24 h-24 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+          </div>
+          <h3 className="text-white font-bold text-lg mb-1 relative z-10">Unlock SonicSpine Pro</h3>
+          <p className="text-slate-400 text-xs mb-4 relative z-10">Get detailed analytics and heatmaps.</p>
+          <button 
+            onClick={handleUpgrade}
+            disabled={isPurchasing}
+            className="w-full py-3 bg-white hover:bg-slate-50 text-slate-900 font-bold rounded-xl shadow-lg transition active:scale-[0.98] relative z-10 disabled:opacity-50"
+          >
+            {isPurchasing ? 'Processing...' : 'Upgrade Now'}
+          </button>
+          <button 
+            onClick={handleRestore}
+            disabled={isPurchasing}
+            className="mt-3 text-slate-400 hover:text-white text-[10px] uppercase tracking-wider font-bold underline decoration-slate-600 underline-offset-4 relative z-10"
+          >
+            Restore Purchases
+          </button>
+        </div>
+      )}
     </div>
   );
 }

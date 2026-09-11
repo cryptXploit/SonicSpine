@@ -11,8 +11,10 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@capacitor/android": "^8.5.2",
     "@capacitor/core": "^8.5.1",
     "@mediapipe/tasks-vision": "^1.0.1",
+    "@revenuecat/purchases-capacitor": "^13.5.1",
     "@tailwindcss/vite": "^4.3.3",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",

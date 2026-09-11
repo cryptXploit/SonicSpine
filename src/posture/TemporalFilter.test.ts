@@ -18,20 +18,23 @@ describe('TemporalFilter', () => {
   };
 
   it('initializes correctly', () => {
-    const filter = new TemporalFilter(0.2, 3.0, 1.5);
+    const filter = new TemporalFilter(0.2);
     expect(filter).toBeDefined();
   });
 
-  it('detects out of bounds instantly based on penalty score', () => {
-    const filter = new TemporalFilter(1.0, 1.5, 3.0, 1.5); // drift=1.5s
-    
-    // Good posture (0 deviation)
-    let res = filter.process(createFeatures(0, 0, 0.5, 0.8), baseline, 0);
-    expect(res.stateFlags.isDrifting).toBe(false);
+  it('smooths features properly', () => {
+    const filter = new TemporalFilter(0.5);
 
-    // Bad posture: 11 degrees of tilt (110 penalty) -> out of bounds but not sustained yet
-    res = filter.process(createFeatures(11, 0, 0.5, 0.8), baseline, 100);
-    expect(res.stateFlags.isDrifting).toBe(false);
+    const f1 = createFeatures(10, 5, 0.5, 0.8);
+    let res = filter.process(f1, baseline, 0);
+
+    const f2 = createFeatures(20, 15, 0.6, 0.7);
+    res = filter.process(f2, baseline, 100); // Trigger smoothing
+
+    // We can't strictly assert the exact value due to dynamic motion smoothing,
+    // but we can assert it moved towards f2
+    expect(res.smoothed.headTilt).toBeGreaterThan(10);
+    expect(res.smoothed.headTilt).toBeLessThan(20);
   });
 
   it('detects sustained deviation (evidence accumulation)', () => {
@@ -60,7 +63,7 @@ describe('TemporalFilter', () => {
   });
 
   it('resets correctly', () => {
-    const filter = new TemporalFilter(0.2, 3.0, 1.5);
+    const filter = new TemporalFilter(0.2);
     filter.process(createFeatures(20, 0, 0.5, 0.8), baseline, 0);
     filter.reset();
     

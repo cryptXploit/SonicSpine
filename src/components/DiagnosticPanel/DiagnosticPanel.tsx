@@ -1,7 +1,7 @@
-import { PostureState } from '../posture/PostureStateMachine';
-import { PostureFeatures } from '../posture/types';
-import { PostureDeviations } from '../posture/TemporalFilter';
-import { ConfidenceResult } from '../vision/ConfidenceEstimator';
+import { PostureState } from '../../posture/PostureStateMachine';
+import { PostureFeatures } from '../../posture/types';
+import { PostureDeviations } from '../../posture/TemporalFilter';
+import { ConfidenceResult } from '../../vision/ConfidenceEstimator';
 
 interface DiagnosticPanelProps {
   state: PostureState;

@@ -12,9 +12,6 @@ export interface PostureDeviations {
 
 export class TemporalFilter {
   private readonly smoothingFactor: number;
-  private readonly driftThresholdMs: number;
-  private readonly correctiveThresholdMs: number;
-  private readonly recoveryThresholdMs: number;
 
   private smoothedFeatures: PostureFeatures | null = null;
   private lastFeatures: PostureFeatures | null = null;
