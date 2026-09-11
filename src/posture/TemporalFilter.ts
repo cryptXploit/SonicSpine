@@ -1,5 +1,6 @@
 import { PostureFeatures } from './types';
 import { PostureBaseline } from './CalibrationEngine';
+import { PostureConfig } from './config';
 
 export interface PostureDeviations {
   headTiltDeviation: number;
@@ -19,19 +20,10 @@ export class TemporalFilter {
   private lastFeatures: PostureFeatures | null = null;
   private lastFrameTime: number | null = null;
   
-  private outOfBoundsStartTime: number | null = null;
-  private inBoundsStartTime: number | null = null;
+  private evidenceScore: number = 0; // 0 to 100
 
-  // Hysteresis thresholds
-  private readonly PENALTY_DRIFT = 80.0;
-  private readonly PENALTY_CORRECTIVE = 120.0;
-  private readonly PENALTY_RECOVER = 70.0;
-
-  constructor(smoothingFactor = 0.2, driftSecs = 1.5, correctiveSecs = 3.0, recoverySecs = 2.0) {
+  constructor(smoothingFactor = 0.2) {
     this.smoothingFactor = smoothingFactor;
-    this.driftThresholdMs = driftSecs * 1000;
-    this.correctiveThresholdMs = correctiveSecs * 1000;
-    this.recoveryThresholdMs = recoverySecs * 1000;
   }
 
   public process(current: PostureFeatures, baseline: PostureBaseline, nowMs: number): {
@@ -42,7 +34,8 @@ export class TemporalFilter {
       isDrifting: boolean,
       isCorrective: boolean,
       isRecovered: boolean
-    }
+    },
+    evidence: number
   } {
     let dt = 16.6; // ~60fps default
     if (this.lastFrameTime !== null) {
@@ -75,68 +68,66 @@ export class TemporalFilter {
       this.smoothedFeatures.noseYawDeviation = this.lerp(this.smoothedFeatures.noseYawDeviation || 0, current.noseYawDeviation, dynamicSmoothing);
     }
 
-    // 3. Deviations from baseline
+    // 3. Normalized Deviations from baseline
+    // Normalize geometric ratios so multipliers don't explode based on absolute pixel sizes
     const headTiltDeviation = Math.abs(this.smoothedFeatures.headTilt - baseline.features.headTilt);
     const shoulderRollDeviation = Math.abs(this.smoothedFeatures.shoulderRoll - baseline.features.shoulderRoll);
-    const craneDeviation = Math.max(0, this.smoothedFeatures.forwardCraneRatio - baseline.features.forwardCraneRatio); 
-    const collapseDeviation = Math.max(0, baseline.features.neckCollapseRatio - this.smoothedFeatures.neckCollapseRatio);
+    
+    // Normalize crane and collapse relative to their baseline so it's a percentage change
+    const rawCraneDeviation = Math.max(0, this.smoothedFeatures.forwardCraneRatio - baseline.features.forwardCraneRatio);
+    const normalizedCrane = baseline.features.forwardCraneRatio > 0 ? (rawCraneDeviation / baseline.features.forwardCraneRatio) : rawCraneDeviation;
+
+    const rawCollapseDeviation = Math.max(0, baseline.features.neckCollapseRatio - this.smoothedFeatures.neckCollapseRatio);
+    const normalizedCollapse = baseline.features.neckCollapseRatio > 0 ? (rawCollapseDeviation / baseline.features.neckCollapseRatio) : rawCollapseDeviation;
 
     const isHeadTurned = this.smoothedFeatures.noseYawDeviation > 0.3; 
     
-    let totalPenalty = 
-      (headTiltDeviation * 10) + 
-      (shoulderRollDeviation * 5) + 
-      (craneDeviation * 1000) + 
-      (collapseDeviation * 3500);
+    // Weights are now applied to normalized percentages (0.0 to 1.0 usually)
+    let penaltyCrane = normalizedCrane * PostureConfig.weights.crane;
+    let penaltyCollapse = normalizedCollapse * PostureConfig.weights.collapse;
+    let penaltyTilt = headTiltDeviation * PostureConfig.weights.headTilt;
+    let penaltyRoll = shoulderRollDeviation * PostureConfig.weights.shoulderRoll;
 
     if (isHeadTurned) {
-       totalPenalty = (headTiltDeviation * 10) + (shoulderRollDeviation * 5); 
+       penaltyCrane = 0;
+       penaltyCollapse = 0;
     }
 
-    // Motion Gating: if user is moving quickly (e.g. reaching), suppress penalty so it doesn't instantly jump
+    let totalPenalty = penaltyTilt + penaltyRoll + penaltyCrane + penaltyCollapse;
+
+    // Motion Gating: suppress penalty during rapid movement
     totalPenalty *= motionStability;
 
     const deviations: PostureDeviations = {
-      headTiltDeviation,
-      shoulderRollDeviation,
-      craneDeviation,
-      collapseDeviation,
+      headTiltDeviation: penaltyTilt,
+      shoulderRollDeviation: penaltyRoll,
+      craneDeviation: penaltyCrane,
+      collapseDeviation: penaltyCollapse,
       totalPenalty
     };
 
-    // 4. Temporal Accumulation with Hysteresis
-    if (totalPenalty >= this.PENALTY_DRIFT) {
-      this.inBoundsStartTime = null;
-      if (this.outOfBoundsStartTime === null) {
-        this.outOfBoundsStartTime = nowMs;
-      }
-    } else if (totalPenalty <= this.PENALTY_RECOVER) {
-      this.outOfBoundsStartTime = null;
-      if (this.inBoundsStartTime === null) {
-        this.inBoundsStartTime = nowMs;
-      }
-    }
-    // If penalty is between 70 and 80, we maintain current timers (Hysteresis middle zone)
-
-    let isDrifting = false;
-    let isCorrective = false;
-    let isRecovered = false;
-
-    if (this.outOfBoundsStartTime !== null) {
-      const duration = nowMs - this.outOfBoundsStartTime;
-      if (duration >= this.correctiveThresholdMs || totalPenalty >= this.PENALTY_CORRECTIVE) {
-        isCorrective = true;
-      } else if (duration >= this.driftThresholdMs) {
-        isDrifting = true;
-      }
+    // 4. Evidence Accumulation (0 to 100)
+    // Map penalty to an evidence delta.
+    // If penalty is low (< 50), evidence decays. If penalty is high, evidence accumulates.
+    const PENALTY_NEUTRAL = 60; // Tuning parameter: below this, we are recovering.
+    
+    const dtSeconds = dt / 1000;
+    let evidenceDelta = 0;
+    
+    if (totalPenalty > PENALTY_NEUTRAL) {
+      // Build up evidence based on how bad the posture is
+      const severity = (totalPenalty - PENALTY_NEUTRAL) / 100.0; 
+      evidenceDelta = severity * PostureConfig.evidence.accumulationRate * dtSeconds * 50; // Arbitrary multiplier to map to 0-100 scale over a few seconds
+    } else {
+      // Decay evidence
+      evidenceDelta = -PostureConfig.evidence.decayRate * dtSeconds * 50;
     }
 
-    if (this.inBoundsStartTime !== null) {
-      const duration = nowMs - this.inBoundsStartTime;
-      if (duration >= this.recoveryThresholdMs) {
-        isRecovered = true;
-      }
-    }
+    this.evidenceScore = Math.max(0, Math.min(100, this.evidenceScore + evidenceDelta));
+
+    let isDrifting = this.evidenceScore >= PostureConfig.evidence.driftThreshold;
+    let isCorrective = this.evidenceScore >= PostureConfig.evidence.correctiveThreshold;
+    let isRecovered = this.evidenceScore <= PostureConfig.evidence.recoveryThreshold;
 
     return {
       smoothed: { ...this.smoothedFeatures },
@@ -146,7 +137,8 @@ export class TemporalFilter {
         isDrifting,
         isCorrective,
         isRecovered
-      }
+      },
+      evidence: this.evidenceScore
     };
   }
 
@@ -154,8 +146,7 @@ export class TemporalFilter {
     this.smoothedFeatures = null;
     this.lastFeatures = null;
     this.lastFrameTime = null;
-    this.outOfBoundsStartTime = null;
-    this.inBoundsStartTime = null;
+    this.evidenceScore = 0;
   }
 
   private lerp(start: number, end: number, factor: number): number {

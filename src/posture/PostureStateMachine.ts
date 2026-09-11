@@ -1,4 +1,5 @@
 import { ConfidenceResult } from '../vision/ConfidenceEstimator';
+import { PostureConfig } from './config';
 
 export type PostureState =
   | 'BOOT'
@@ -26,7 +27,6 @@ export class PostureStateMachine {
   private onStateChange?: (newState: PostureState) => void;
   
   private lowConfidenceStartTime: number | null = null;
-  private readonly LOW_CONFIDENCE_TIMEOUT_MS = 5000;
 
   constructor(onStateChange?: (newState: PostureState) => void) {
     this.onStateChange = onStateChange;
@@ -71,7 +71,7 @@ export class PostureStateMachine {
       if (this.currentState !== 'LOW_CONFIDENCE') {
         if (this.lowConfidenceStartTime === null) {
           this.lowConfidenceStartTime = now;
-        } else if (now - this.lowConfidenceStartTime > this.LOW_CONFIDENCE_TIMEOUT_MS) {
+        } else if (now - this.lowConfidenceStartTime > PostureConfig.timeouts.lowConfidenceHoldMs) {
           this.transitionTo('LOW_CONFIDENCE');
         }
       }

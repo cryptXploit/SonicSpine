@@ -25,6 +25,7 @@ export function usePostureSession() {
   const lastDiagnosticDeviations = useRef<import('../posture/TemporalFilter').PostureDeviations | null>(null);
   const lastDiagnosticMotion = useRef<number>(1.0);
   const lastDiagnosticFlags = useRef({ isDrifting: false, isCorrective: false, isRecovered: false });
+  const lastDiagnosticEvidence = useRef<number>(0);
 
   const stateMachineRef = useRef<PostureStateMachine>(new PostureStateMachine((newState) => {
     setAppState(newState);
@@ -86,13 +87,14 @@ export function usePostureSession() {
     }
 
     if (baseline && features && confidence.level === 'HIGH') {
-      const { stateFlags, deviations, motionStability } = filterRef.current.process(features, baseline, performance.now());
+      const { stateFlags, deviations, motionStability, evidence } = filterRef.current.process(features, baseline, performance.now());
       
       lastDiagnosticConfidence.current = confidence;
       lastDiagnosticFeatures.current = features;
       lastDiagnosticDeviations.current = deviations;
       lastDiagnosticMotion.current = motionStability;
       lastDiagnosticFlags.current = stateFlags;
+      lastDiagnosticEvidence.current = evidence;
 
       sm.processFrame({
         confidence,
@@ -104,7 +106,9 @@ export function usePostureSession() {
       lastDiagnosticDeviations.current = null;
       lastDiagnosticMotion.current = 1.0;
       lastDiagnosticFlags.current = { isDrifting: false, isCorrective: false, isRecovered: false };
-
+      
+      // Evidence doesn't reset instantly, it decays if not high confidence, but we can just hold it
+      
       sm.processFrame({
         confidence,
         stateFlags: lastDiagnosticFlags.current
@@ -164,7 +168,9 @@ export function usePostureSession() {
       features: lastDiagnosticFeatures.current,
       deviations: lastDiagnosticDeviations.current,
       motionStability: lastDiagnosticMotion.current,
-      stateFlags: lastDiagnosticFlags.current
+      stateFlags: lastDiagnosticFlags.current,
+      evidence: lastDiagnosticEvidence.current,
+      audio: audioEngineRef.current.getDiagnostics()
     })
   };
 }

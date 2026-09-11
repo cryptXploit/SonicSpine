@@ -337,6 +337,8 @@ function DiagnosticOverlay({ getDiagnostics }: { getDiagnostics: any }) {
       deviations={data.deviations}
       motionStability={data.motionStability || 1.0}
       stateFlags={data.stateFlags || { isDrifting: false, isCorrective: false, isRecovered: false }}
+      evidence={data.evidence || 0}
+      audio={data.audio || null}
     />
   );
 }

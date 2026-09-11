@@ -34,21 +34,28 @@ describe('TemporalFilter', () => {
     expect(res.stateFlags.isDrifting).toBe(false);
   });
 
-  it('detects sustained deviation (debounce)', () => {
-    const filter = new TemporalFilter(1.0, 1.5, 3.0, 1.5); // 1.5s to drift, 3s to correct
+  it('detects sustained deviation (evidence accumulation)', () => {
+    const filter = new TemporalFilter(1.0); 
     
-    // Out of bounds (10 tilt = 100 penalty) at 0ms
-    let res = filter.process(createFeatures(10, 0, 0.5, 0.8), baseline, 0);
+    // Out of bounds (15 tilt = 150 penalty)
+    let res = filter.process(createFeatures(15, 0, 0.5, 0.8), baseline, 0);
     expect(res.stateFlags.isDrifting).toBe(false);
     expect(res.stateFlags.isCorrective).toBe(false);
 
-    // Still out of bounds at 1500ms
-    res = filter.process(createFeatures(10, 0, 0.5, 0.8), baseline, 1500);
+    let frame = 1;
+    // Simulate until drifting
+    while(!res.stateFlags.isDrifting && frame < 300) {
+        res = filter.process(createFeatures(15, 0, 0.5, 0.8), baseline, frame * 16.6);
+        frame++;
+    }
     expect(res.stateFlags.isDrifting).toBe(true);
     expect(res.stateFlags.isCorrective).toBe(false);
 
-    // Sustained out of bounds at 3000ms
-    res = filter.process(createFeatures(10, 0, 0.5, 0.8), baseline, 3000);
+    // Simulate until corrective
+    while(!res.stateFlags.isCorrective && frame < 600) {
+        res = filter.process(createFeatures(15, 0, 0.5, 0.8), baseline, frame * 16.6);
+        frame++;
+    }
     expect(res.stateFlags.isCorrective).toBe(true);
   });
 

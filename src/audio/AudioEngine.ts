@@ -1,4 +1,5 @@
 import { PostureState } from '../posture/PostureStateMachine';
+import { PostureConfig } from '../posture/config';
 
 export type AudioState = 'UNINITIALIZED' | 'READY' | 'PLAYING' | 'PAUSED' | 'ERROR';
 
@@ -117,6 +118,14 @@ export class AudioEngine {
     this.setMuffling(20000, 1.0);
   }
 
+  public getDiagnostics() {
+    return {
+      state: this.state,
+      actualFreq: this.filter ? this.filter.frequency.value : 0,
+      actualGain: this.gain ? this.gain.gain.value : 0
+    };
+  }
+
   private setMuffling(frequency: number, gainTarget: number): void {
     if (!this.ctx || !this.filter || !this.gain || this.state === 'ERROR') return;
     const now = this.ctx.currentTime;
@@ -127,7 +136,7 @@ export class AudioEngine {
     this.filter.frequency.setValueAtTime(this.filter.frequency.value, now);
     this.gain.gain.setValueAtTime(this.gain.gain.value, now);
 
-    const transitionTime = 1.5;
+    const transitionTime = PostureConfig.timeouts.audioTransitionMs / 1000.0;
     this.filter.frequency.linearRampToValueAtTime(frequency, now + transitionTime);
     this.gain.gain.linearRampToValueAtTime(gainTarget, now + transitionTime);
   }
@@ -137,13 +146,13 @@ export class AudioEngine {
       case 'GOOD':
       case 'READY':
       case 'CALIBRATING':
+      case 'LOW_CONFIDENCE':
         this.setMuffling(20000, 1.0);
         break;
       case 'DRIFTING':
         this.setMuffling(4000, 0.85);
         break;
       case 'CORRECTIVE':
-      case 'LOW_CONFIDENCE':
         this.setMuffling(800, 0.6);
         break;
       case 'RECOVERING':
