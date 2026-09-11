@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { CameraView } from './components/CameraView/CameraView';
 import { db } from './storage/Database';
 import { Dashboard } from './components/Dashboard/Dashboard';
@@ -11,54 +11,37 @@ function App() {
     calibrationProgress,
     calibrationError,
     sessionSummary,
+    audioEngine,
     handlePoseUpdate,
     startCalibration,
     stopSession,
     resetCalibration,
-    initializeAudio,
     clearSummary
   } = usePostureSession();
 
-  const audioRef = useRef<HTMLAudioElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [volume, setVolume] = useState(1.0);
 
   useEffect(() => {
-    if (audioRef.current) {
-      initializeAudio(audioRef.current);
-    }
-  }, [initializeAudio]);
+    audioEngine.setVolume(volume);
+  }, [volume, audioEngine]);
 
-  useEffect(() => {
-    if (audioRef.current) {
-      audioRef.current.volume = volume;
-    }
-  }, [volume]);
-
-  const handleStartSession = async () => {
-    // 1. Play audio immediately on user interaction to satisfy browser autoplay policies
-    if (audioRef.current) {
-      try {
-        await audioRef.current.play();
-        setIsPlaying(true);
-      } catch (err) {
-        console.error("Audio playback failed. Please interact with the page.", err);
-      }
-    }
-    
-    // 2. Initialize calibration/session logic
-    await startCalibration();
+  // Sync React UI state with AudioEngine state via polling or events. 
+  // For simplicity, we just sync it on user interactions since audioEngine controls play/pause internally.
+    const handleStartSession = () => {
+    // startCalibration internally calls audioEngine.play() synchronously!
+    startCalibration();
+    setIsPlaying(true);
   };
 
   const handleStopSession = async () => {
-    if (audioRef.current) {
-      audioRef.current.pause();
-      setIsPlaying(false);
-    }
-    const summary = stopSession();
-    if (summary) {
+    stopSession();
+    setIsPlaying(false);
+    
+    // the summary is retrieved inside stopSession and state is set internally by hook
+    if (sessionSummary) {
       try {
-        await db.saveSession(summary);
+        await db.saveSession(sessionSummary);
       } catch (e) {
         console.error("Failed to save session to DB", e);
       }
@@ -66,22 +49,18 @@ function App() {
   };
 
   const toggleAudio = () => {
-    if (audioRef.current) {
-      if (isPlaying) {
-        audioRef.current.pause();
-        setIsPlaying(false);
-      } else {
-        audioRef.current.play().then(() => setIsPlaying(true)).catch(e => console.error(e));
-      }
+    if (isPlaying) {
+      audioEngine.pause();
+      setIsPlaying(false);
+    } else {
+      audioEngine.play();
+      setIsPlaying(true);
     }
   };
 
   const handleResetCalibration = () => {
-    if (audioRef.current) {
-      audioRef.current.pause();
-      setIsPlaying(false);
-    }
     resetCalibration();
+    setIsPlaying(false);
   };
 
   const getStatusSubtext = () => {
@@ -328,9 +307,6 @@ function App() {
 
   return (
     <>
-      <audio ref={audioRef} loop>
-        <source src="/ambient.wav" type="audio/wav" />
-      </audio>
       {renderContent()}
     </>
   );

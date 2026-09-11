@@ -26,6 +26,10 @@ export function usePostureSession() {
   }));
 
   useEffect(() => {
+    // Deterministic Audio Initialization on mount
+    audioEngineRef.current.initialize();
+    audioEngineRef.current.load();
+
     const existing = CalibrationEngine.loadBaseline();
     if (existing) {
       setBaseline(existing);
@@ -35,10 +39,10 @@ export function usePostureSession() {
     } else {
       stateMachineRef.current.triggerCameraReady();
     }
-  }, []);
 
-  const initializeAudio = useCallback((audioElement: HTMLMediaElement) => {
-    audioEngineRef.current.initialize(audioElement);
+    return () => {
+      audioEngineRef.current.dispose();
+    }
   }, []);
 
   const handlePoseUpdate = useCallback((
@@ -99,13 +103,15 @@ export function usePostureSession() {
     engineRef.current.reset();
     setCalibrationProgress(0);
     setCalibrationError('');
-    stateMachineRef.current.startCalibration();
     
-    // We expect the consumer (UI) to handle playing audio directly on click to avoid iOS Safari blocking.
-    await audioEngineRef.current.resumeContext();
+    // Play MUST be called synchronously in the user gesture!
+    audioEngineRef.current.play();
+
+    stateMachineRef.current.startCalibration();
   }, []);
 
   const stopSession = useCallback(() => {
+    audioEngineRef.current.pause();
     const summary = sessionManagerRef.current.endSession();
     if (summary) {
       setSessionSummary(summary);
@@ -114,6 +120,7 @@ export function usePostureSession() {
   }, []);
 
   const resetCalibration = useCallback(() => {
+    audioEngineRef.current.pause();
     localStorage.removeItem('sonicspine_baseline');
     setBaseline(null);
     setCalibrationProgress(0);
@@ -131,11 +138,11 @@ export function usePostureSession() {
     calibrationProgress,
     calibrationError,
     sessionSummary,
+    audioEngine: audioEngineRef.current,
     handlePoseUpdate,
     startCalibration,
     stopSession,
     resetCalibration,
-    initializeAudio,
     clearSummary
   };
 }

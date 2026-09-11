@@ -51,10 +51,10 @@ describe('AudioEngine', () => {
 
   it('initializes gracefully', () => {
     const engine = new AudioEngine();
-    const mockAudioEl = document.createElement('audio');
+    
     
     // Should not throw
-    engine.initialize(mockAudioEl);
+    engine.initialize();
     
     expect(mockAudioContext).toHaveBeenCalled();
     expect(mockFilter.frequency.value).toBe(20000); // starts clear
@@ -65,16 +65,16 @@ describe('AudioEngine', () => {
     Object.defineProperty(window, 'AudioContext', { value: undefined, writable: true });
     
     const engine = new AudioEngine();
-    const mockAudioEl = document.createElement('audio');
+    
     
     // Should safely abort without throwing
-    expect(() => engine.initialize(mockAudioEl)).not.toThrow();
+    expect(() => engine.initialize()).not.toThrow();
   });
 
   it('applies mild filter for DRIFTING state', () => {
     const engine = new AudioEngine();
-    const mockAudioEl = document.createElement('audio');
-    engine.initialize(mockAudioEl);
+    
+    engine.initialize();
     
     engine.updateState('DRIFTING');
     
@@ -84,8 +84,8 @@ describe('AudioEngine', () => {
 
   it('applies strong filter for CORRECTIVE state', () => {
     const engine = new AudioEngine();
-    const mockAudioEl = document.createElement('audio');
-    engine.initialize(mockAudioEl);
+    
+    engine.initialize();
     
     engine.updateState('CORRECTIVE');
     
@@ -94,8 +94,8 @@ describe('AudioEngine', () => {
 
   it('restores clear audio for GOOD state', () => {
     const engine = new AudioEngine();
-    const mockAudioEl = document.createElement('audio');
-    engine.initialize(mockAudioEl);
+    
+    engine.initialize();
     
     engine.updateState('GOOD');
     
