@@ -9,9 +9,9 @@ Following a comprehensive Phase 1 Audit, critical P0 and P1 defects in the audio
 - **Cause 2**: Browser autoplay policies require `.play()` to happen strictly synchronously with a user gesture. `App.tsx` was `await`-ing `startCalibration()` before calling `.play()`, which pushed playback into a detached microtask and resulted in `NotAllowedError`.
 - **Cause 3**: React hot reloads or state changes unmounted the `<audio>` tag. Since `AudioEngine` caches its initialization, the new `<audio>` element was never connected to the Web Audio API context.
 - **Fix Applied**: 
-  1. Replaced the remote 403-blocking URL with a highly reliable local `/ambient.wav` file.
-  2. Moved `.play()` to fire strictly before any asynchronous `await` block in `handleStartSession`.
-  3. Hoisted the `<audio>` tag outside of conditional rendering in `App.tsx` so it persists for the entire React application lifecycle.
+  1. Rewrote `AudioEngine.ts` to be completely deterministic and detached from the React DOM tree. It now programmatically spawns `new Audio()` and controls its own graph.
+  2. Implemented an explicit fallback strategy (`load()`) so if `public/ambient.wav` fails, it falls back to a known-safe external source.
+  3. Ensured that `audioEngine.play()` is invoked strictly and synchronously inside the click handler to satisfy iOS Safari autoplay protections.
 
 ### 2. Posture Detection False-Positives (FIXED - P0)
 - **Problem**: Looking down at the keyboard, or looking sideways to a second monitor, would trigger immediate false positives for slouching and craning.
