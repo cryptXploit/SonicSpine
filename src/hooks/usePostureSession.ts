@@ -25,16 +25,10 @@ export function usePostureSession() {
   const sessionManagerRef = useRef<SessionManager>(new SessionManager());
   const checklistRef = useRef({ head: false, shoulders: false });
   
-  const gestureRecognizerRef = useRef<GestureRecognizer>(new GestureRecognizer((event) => {
-    const currentVol = audioEngineRef.current.getVolume();
-    let newVol = currentVol;
-    if (event === 'VOLUME_UP') {
-      newVol = Math.min(1.0, currentVol + 0.15);
-    } else if (event === 'VOLUME_DOWN') {
-      newVol = Math.max(0.0, currentVol - 0.15);
-    }
-    audioEngineRef.current.setVolume(newVol);
-    setVolume(newVol); // Sync with React UI
+  const gestureRecognizerRef = useRef<GestureRecognizer>(new GestureRecognizer((volume) => {
+    // Volume is already smoothed and clamped 0.0 - 1.0
+    audioEngineRef.current.setVolume(volume);
+    setVolume(volume); // Sync with React UI
   }));
 
   // Diagnostic refs (avoiding state to prevent thrashing)
@@ -81,7 +75,7 @@ export function usePostureSession() {
     const settings = SettingsManager.getSettings();
 
     if (settings.enableGestures) {
-      gestureRecognizerRef.current.process(landmarks, performance.now());
+      gestureRecognizerRef.current.process(landmarks);
     } else {
       gestureRecognizerRef.current.reset();
     }

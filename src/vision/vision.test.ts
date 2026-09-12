@@ -6,22 +6,25 @@ import { PostureLandmarks } from './types';
 describe('Vision Pipeline', () => {
   describe('LandmarkProcessor', () => {
     it('returns null if no pose is detected', () => {
-      const emptyResult = { landmarks: [] };
+      const emptyResult = { pose: { landmarks: [] }, hands: null };
       expect(LandmarkProcessor.process(emptyResult as any)).toBeNull();
     });
 
     it('extracts required landmarks correctly', () => {
       // Mock MediaPipe result
       const mockResult = {
-        landmarks: [[
-          { x: 0.5, y: 0.5, z: 0.1, visibility: 0.9 }, // 0: nose
-          {}, {}, {}, {}, {}, {}, // 1-6
-          { x: 0.4, y: 0.4, z: 0.2, visibility: 0.8 }, // 7: left ear
-          { x: 0.6, y: 0.4, z: 0.2, visibility: 0.8 }, // 8: right ear
-          {}, {}, // 9-10
-          { x: 0.3, y: 0.7, z: 0.3, visibility: 0.9 }, // 11: left shoulder
-          { x: 0.7, y: 0.7, z: 0.3, visibility: 0.9 }, // 12: right shoulder
-        ]]
+        pose: {
+          landmarks: [[
+            { x: 0.5, y: 0.5, z: 0.1, visibility: 0.9 }, // 0: nose
+            {}, {}, {}, {}, {}, {}, // 1-6
+            { x: 0.4, y: 0.4, z: 0.2, visibility: 0.8 }, // 7: left ear
+            { x: 0.6, y: 0.4, z: 0.2, visibility: 0.8 }, // 8: right ear
+            {}, {}, // 9-10
+            { x: 0.3, y: 0.7, z: 0.3, visibility: 0.9 }, // 11: left shoulder
+            { x: 0.7, y: 0.7, z: 0.3, visibility: 0.9 }, // 12: right shoulder
+          ]]
+        },
+        hands: null
       };
 
       const result = LandmarkProcessor.process(mockResult as any);

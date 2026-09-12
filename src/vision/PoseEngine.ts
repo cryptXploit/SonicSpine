@@ -1,7 +1,13 @@
-import { FilesetResolver, PoseLandmarker, PoseLandmarkerResult } from '@mediapipe/tasks-vision';
+import { FilesetResolver, PoseLandmarker, PoseLandmarkerResult, HandLandmarker, HandLandmarkerResult } from '@mediapipe/tasks-vision';
+
+export interface VisionResult {
+  pose: PoseLandmarkerResult | null;
+  hands: HandLandmarkerResult | null;
+}
 
 export class PoseEngine {
   private poseLandmarker: PoseLandmarker | null = null;
+  private handLandmarker: HandLandmarker | null = null;
   private isInitializing = false;
   private isReady = false;
 
@@ -26,24 +32,38 @@ export class PoseEngine {
         minTrackingConfidence: 0.5,
       });
 
+      this.handLandmarker = await HandLandmarker.createFromOptions(vision, {
+        baseOptions: {
+          modelAssetPath: "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
+          delegate: "GPU"
+        },
+        runningMode: "VIDEO",
+        numHands: 2,
+        minHandDetectionConfidence: 0.5,
+        minHandPresenceConfidence: 0.5,
+        minTrackingConfidence: 0.5,
+      });
+
       this.isReady = true;
     } catch (error) {
-      console.error("Failed to initialize PoseLandmarker:", error);
-      throw new Error("Failed to initialize Pose Engine.");
+      console.error("Failed to initialize Vision Engines:", error);
+      throw new Error("Failed to initialize Vision Engine.");
     } finally {
       this.isInitializing = false;
     }
   }
 
-  public detect(videoElement: HTMLVideoElement, timestampMs: number): PoseLandmarkerResult | null {
-    if (!this.isReady || !this.poseLandmarker) {
+  public detect(videoElement: HTMLVideoElement, timestampMs: number): VisionResult | null {
+    if (!this.isReady || !this.poseLandmarker || !this.handLandmarker) {
       return null;
     }
 
     try {
-      return this.poseLandmarker.detectForVideo(videoElement, timestampMs);
+      const pose = this.poseLandmarker.detectForVideo(videoElement, timestampMs);
+      const hands = this.handLandmarker.detectForVideo(videoElement, timestampMs);
+      return { pose, hands };
     } catch (error) {
-      console.error("Pose inference error:", error);
+      console.error("Vision inference error:", error);
       return null;
     }
   }
@@ -56,6 +76,10 @@ export class PoseEngine {
     if (this.poseLandmarker) {
       this.poseLandmarker.close();
       this.poseLandmarker = null;
+    }
+    if (this.handLandmarker) {
+      this.handLandmarker.close();
+      this.handLandmarker = null;
     }
     this.isReady = false;
   }

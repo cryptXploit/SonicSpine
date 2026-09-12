@@ -1,122 +1,114 @@
 import { PostureLandmarks, Point3D } from './types';
 
-export type GestureEvent = 'VOLUME_UP' | 'VOLUME_DOWN';
-
-export type GestureState = 'IDLE' | 'TRACKING' | 'CONFIRMED' | 'COOLDOWN';
+// The callback now provides a continuous normalized volume [0.0 - 1.0]
+export type GestureEvent = number;
 
 export class GestureRecognizer {
-  private static readonly MIN_CONFIDENCE = 0.6; // Both visibility and presence must be decent
-  private static readonly MIN_DISPLACEMENT = 0.15; // Requires 15% of screen height movement
-  private static readonly TRACKING_FRAMES_REQUIRED = 4; // Must consistently move in same direction for N frames
-  private static readonly COOLDOWN_MS = 1000;
+  private static readonly MIN_CONFIDENCE = 0.6;
+  
+  // Exponential moving average alpha for smoothing the volume
+  private static readonly SMOOTHING_ALPHA = 0.15; 
+  
+  // Normalized distance thresholds
+  private static readonly MIN_NORMALIZED_DIST = 0.05; // Distance for 0% volume
+  private static readonly MAX_NORMALIZED_DIST = 0.35; // Distance for 100% volume
 
-  private state: GestureState = 'IDLE';
-  private trackingStartY: number | null = null;
-  private lastY: number | null = null;
-  private trackingFrames = 0;
-  private trackingDirection: 'UP' | 'DOWN' | null = null;
-  private cooldownEndTime = 0;
-
+  private smoothedVolume: number | null = null;
+  private activeHand: 'LEFT' | 'RIGHT' | null = null;
   private onGesture: (event: GestureEvent) => void;
 
   constructor(onGesture: (event: GestureEvent) => void) {
     this.onGesture = onGesture;
   }
 
-  public process(landmarks: PostureLandmarks | null, nowMs: number) {
-    if (this.state === 'COOLDOWN') {
-      if (nowMs > this.cooldownEndTime) {
-        this.reset();
-      } else {
-        return;
-      }
-    }
-
-    if (!landmarks) {
+  public process(landmarks: PostureLandmarks | null) {
+    if (!landmarks || !landmarks.leftShoulder || !landmarks.rightShoulder) {
       this.reset();
       return;
     }
 
-    // Try to find the most reliable wrist
-    const validWrists = [landmarks.leftWrist, landmarks.rightWrist].filter(this.isValidWrist);
+    // Determine body scale (shoulder width) for normalization
+    const shoulderDx = landmarks.leftShoulder.x - landmarks.rightShoulder.x;
+    const shoulderDy = landmarks.leftShoulder.y - landmarks.rightShoulder.y;
+    const shoulderDz = landmarks.leftShoulder.z - landmarks.rightShoulder.z;
+    const bodyScale = Math.sqrt(shoulderDx * shoulderDx + shoulderDy * shoulderDy + shoulderDz * shoulderDz);
 
-    if (validWrists.length === 0) {
-      // If we lose tracking during a gesture, reset.
-      if (this.state === 'TRACKING') {
-        this.reset();
-      }
+    if (bodyScale < 0.01) {
+      this.reset();
       return;
     }
 
-    // For simplicity, we just track the highest moving wrist (lowest Y)
-    const activeWrist = validWrists.reduce((prev, curr) => (curr!.y < prev!.y ? curr : prev))!;
-    const currentY = activeWrist.y;
+    const leftHandValid = this.isHandValid(landmarks.leftIndex, landmarks.leftThumb);
+    const rightHandValid = this.isHandValid(landmarks.rightIndex, landmarks.rightThumb);
 
-    if (this.state === 'IDLE') {
-      // Start tracking
-      this.state = 'TRACKING';
-      this.trackingStartY = currentY;
-      this.lastY = currentY;
-      this.trackingFrames = 1;
-      this.trackingDirection = null;
+    if (!leftHandValid && !rightHandValid) {
+      // Temporarily hold the last stable volume
       return;
     }
 
-    if (this.state === 'TRACKING') {
-      const deltaY = currentY - this.lastY!;
-      const totalDisplacement = currentY - this.trackingStartY!;
-      
-      // Determine instant direction
-      const instantDir = deltaY < 0 ? 'UP' : 'DOWN'; // y=0 is top of screen
+    // Hand consistency: stick to the active hand if it's still valid
+    if (this.activeHand === 'LEFT' && !leftHandValid) this.activeHand = null;
+    if (this.activeHand === 'RIGHT' && !rightHandValid) this.activeHand = null;
 
-      // Noise filter / Stationary check: If movement is tiny between frames, they might just be resting or typing
-      if (Math.abs(deltaY) < 0.005) {
-         // Not moving much this frame, keep tracking but don't count it as a consistent directional move yet.
-         // Actually, if they are typing, we might accumulate small movements. 
-         // Let's reset if they stay stationary too long, but for now we'll just ignore this frame's direction.
-         this.lastY = currentY;
-         return;
-      }
-
-      if (this.trackingDirection === null) {
-        this.trackingDirection = instantDir;
-      } else if (this.trackingDirection !== instantDir) {
-        // They changed direction (waving, shaking, or returning). Break the gesture.
-        this.reset();
-        return;
-      }
-
-      this.trackingFrames++;
-      this.lastY = currentY;
-
-      // Check if we met the criteria for a full gesture
-      if (this.trackingFrames >= GestureRecognizer.TRACKING_FRAMES_REQUIRED) {
-        if (Math.abs(totalDisplacement) >= GestureRecognizer.MIN_DISPLACEMENT) {
-          this.state = 'CONFIRMED';
-          this.onGesture(this.trackingDirection === 'UP' ? 'VOLUME_UP' : 'VOLUME_DOWN');
-          
-          // Enter cooldown
-          this.state = 'COOLDOWN';
-          this.cooldownEndTime = nowMs + GestureRecognizer.COOLDOWN_MS;
-        }
+    if (!this.activeHand) {
+      if (leftHandValid && rightHandValid) {
+        this.activeHand = (landmarks.leftThumb!.visibility > landmarks.rightThumb!.visibility) ? 'LEFT' : 'RIGHT';
+      } else if (leftHandValid) {
+        this.activeHand = 'LEFT';
+      } else {
+        this.activeHand = 'RIGHT';
       }
     }
+
+    let activeIndex: Point3D;
+    let activeThumb: Point3D;
+
+    if (this.activeHand === 'LEFT') {
+      activeIndex = landmarks.leftIndex!;
+      activeThumb = landmarks.leftThumb!;
+    } else {
+      activeIndex = landmarks.rightIndex!;
+      activeThumb = landmarks.rightThumb!;
+    }
+
+    // Calculate 3D euclidean distance between thumb and index
+    const dx = activeIndex.x - activeThumb.x;
+    const dy = activeIndex.y - activeThumb.y;
+    const dz = activeIndex.z - activeThumb.z;
+    const rawDistance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+
+    const normalizedDist = rawDistance / bodyScale;
+
+    // Map the normalized distance to a 0.0 - 1.0 volume range with clamping
+    let targetVolume = (normalizedDist - GestureRecognizer.MIN_NORMALIZED_DIST) / (GestureRecognizer.MAX_NORMALIZED_DIST - GestureRecognizer.MIN_NORMALIZED_DIST);
+    targetVolume = Math.max(0.0, Math.min(1.0, targetVolume));
+
+    // Smooth the volume transition
+    if (this.smoothedVolume === null) {
+      this.smoothedVolume = targetVolume;
+    } else {
+      this.smoothedVolume = this.smoothedVolume + GestureRecognizer.SMOOTHING_ALPHA * (targetVolume - this.smoothedVolume);
+    }
+
+    // Dead zone check to prevent micro-jitter callbacks if volume barely changed
+    // In practice, web audio handles continuous updates fine, but we can quantize it slightly or just pass it through.
+    this.onGesture(this.smoothedVolume);
   }
 
-  private isValidWrist(wrist: Point3D | undefined): boolean {
-    if (!wrist) return false;
-    return wrist.visibility >= GestureRecognizer.MIN_CONFIDENCE && wrist.presence >= GestureRecognizer.MIN_CONFIDENCE;
+  private isHandValid(index: Point3D | undefined, thumb: Point3D | undefined): boolean {
+    if (!index || !thumb) return false;
+    return index.visibility >= GestureRecognizer.MIN_CONFIDENCE && 
+           thumb.visibility >= GestureRecognizer.MIN_CONFIDENCE;
   }
 
   public reset() {
-    this.state = 'IDLE';
-    this.trackingStartY = null;
-    this.lastY = null;
-    this.trackingFrames = 0;
-    this.trackingDirection = null;
+    this.activeHand = null;
+    // Keep smoothedVolume as is, so if the hand drops, the volume stays where it was.
+    // If we wanted to reset volume, we would do it here, but typically you want the volume 
+    // to remain at whatever you left it at when you put your hand down.
   }
 
   public getState() {
-    return this.state;
+    return 'IDLE'; // Backward compatibility with any diagnostic polling
   }
 }
