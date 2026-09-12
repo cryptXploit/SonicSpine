@@ -52,11 +52,36 @@ Following a comprehensive Phase 1 Audit, critical P0 and P1 defects in the audio
 - **Status**: The `README.md` has been completely rewritten to include the project pitch, feature highlights, architecture overview, and reproducible build instructions.
 - **QA**: The repository is verified to be under the MIT License, contains no hardcoded secrets, and has 100% passing automated tests.
 
-## Final Status
-All engineering and documentation milestones (M1 through M17) are **100% complete**. The core engine is mathematically sound, the Android/Monetization scaffolding is safely integrated, and the repository is ready for public presentation.
+### 8. Centralized Settings & Timing Configs (M18 - COMPLETE)
+- **Status**: Implemented persistent, backward-compatible Settings architecture via `SettingsManager.ts` using `localStorage`.
+- **Screen Presence Grace Period (9A)**: Decoupled `NONE` confidence (user absent) from `LOW` confidence. `NONE` triggers the configurable absence timer before treating it as low confidence.
+- **Recovery Delay (9B)**: State transitions back to `GOOD` are now delayed by the configured `recoveryDelayMs`.
+- **Low Confidence Audio (9C)**: `AudioEngine` handles `CLEAR`, `MAINTAIN`, and `PAUSE`. `PAUSE` successfully drops the `GainNode` to 0.0 (safe muting) and seamlessly restores the intended target when posture validity returns.
+- **UI**: Added human-readable `SettingsPanel` inside Dashboard.
+- **Regression Safety**: Passed all automated test suites ensuring `0ms` recovery and `5000ms` absence perfectly recreate the existing user-visible logic.
 
-### Next Steps for the User (M18 & M19)
-The final steps to submit to the hackathon require manual user action:
-1. **Device Testing**: Run `npx cap open android`, build the APK, and test it on a physical Android device to verify camera/audio permissions in the WebView.
-2. **Demo Assets**: Record a <2-minute demo video showing calibration, normal posture, drifting, and recovery audio feedback.
+### 9. Hand Gesture Volume Control (M19 - COMPLETE)
+- **Status**: Implemented an independent, evidence-based gesture recognition subsystem.
+- **Safety**: Defaults to `false` in `SettingsManager`. Exposes a Beta toggle in `SettingsPanel`.
+- **Architecture**: `PoseEngine` → `LandmarkProcessor` (now extracting Wrists) → `GestureRecognizer`. It evaluates confidence, temporal consistency, and minimum displacement (15% screen height) to prevent false positives from typing or mouse movement.
+- **Audio Integration**: Bounded fixed increments (±0.15) applied strictly to `AudioEngine.setVolume()`. Employs a 1000ms cooldown to block runaway scrolling.
+
+### 10. Session Analytics (M20 - COMPLETE)
+- **Status**: Implemented high-value tracking for 'Low Confidence' / 'Away' time.
+- **Metrics**: `SessionManager` now accumulates `timeInLowConfidenceMs`. This duration is successfully excluded from the `healthScore` penalty math (so standing up for coffee doesn't artificially ruin your posture consistency).
+- **UI**: Added a 6-metric grid to `App.tsx` "Session Complete" view to accurately surface: Consistency, Duration, Stable, Drifting, Corrective, and Away time.
+
+### 11. Camera Setup UX (M21 - COMPLETE)
+- **Status**: Implemented high-priority camera setup checklist in the pre-session UI.
+- **Metrics**: `ConfidenceEstimator` now extracts and returns explicit `headVisible` and `shouldersVisible` metrics alongside the overall confidence score.
+- **UI**: Added a dynamic overlay checklist over the camera view during the `CAMERA_READY` state. The "Calibrate & Start Session" button is **disabled** and explicitly reads "Position yourself in frame" until both the Head and Shoulders are detected. This guarantees valid baseline calibration data.
+
+## Final Status
+- **Browser Web App:** Verified (Automated tests passing, Vite production build successful).
+- **Automated Tests:** Verified (48/48 tests passing covering state machine, vision math, and filtering).
+- **Android Compilation:** Not yet verified (Local Android SDK missing, user must compile physically).
+- **Physical Device:** Not yet verified (Awaiting manual validation gate on an Android phone).
+
+### M22 Physical Device Testing Checklist
+The final step is for the user to validate the app on a physical Android device. A strict testing protocol has been generated.
 3. **Devpost Submission**: Verify all hackathon rules and submit the project.

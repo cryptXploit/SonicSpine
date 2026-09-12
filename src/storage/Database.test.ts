@@ -19,6 +19,7 @@ describe('Database (IndexedDB)', () => {
     timeInGoodMs: 50000,
     timeInDriftingMs: 5000,
     timeInCorrectiveMs: 5000,
+    timeInLowConfidenceMs: 0,
     deviationCount: 2,
     healthScore: score
   });

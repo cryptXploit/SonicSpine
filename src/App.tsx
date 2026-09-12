@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { CameraView } from './components/CameraView/CameraView';
 import { db } from './storage/Database';
 import { Dashboard } from './components/Dashboard/Dashboard';
 import { usePostureSession } from './hooks/usePostureSession';
 import { DiagnosticPanel } from './components/DiagnosticPanel/DiagnosticPanel';
+import { SettingsPanel } from './components/SettingsPanel/SettingsPanel';
 
 function App() {
   const {
@@ -18,15 +19,25 @@ function App() {
     stopSession,
     resetCalibration,
     clearSummary,
-    getDiagnostics
+    getDiagnostics,
+    volume,
+    setupChecklist,
+    handleManualVolume
   } = usePostureSession();
 
   const [isPlaying, setIsPlaying] = useState(false);
-  const [volume, setVolume] = useState(1.0);
+  const [showVolumeToast, setShowVolumeToast] = useState(false);
+  const volumeRef = useRef(volume);
 
   useEffect(() => {
-    audioEngine.setVolume(volume);
-  }, [volume, audioEngine]);
+    // Only show toast if it changes programmatically after initial mount
+    if (volumeRef.current !== volume) {
+      volumeRef.current = volume;
+      setShowVolumeToast(true);
+      const timer = setTimeout(() => setShowVolumeToast(false), 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [volume]);
 
   // Sync React UI state with AudioEngine state via polling or events. 
   // For simplicity, we just sync it on user interactions since audioEngine controls play/pause internally.
@@ -121,21 +132,31 @@ function App() {
             <p className="text-slate-500 mb-8 text-sm">Great job staying focused.</p>
             
             <div className="grid grid-cols-2 gap-4 text-left mb-8">
-              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Consistency</p>
-                <p className="text-3xl font-bold text-emerald-500">{sessionSummary.healthScore}%</p>
+              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 col-span-2 flex justify-between items-center">
+                <div>
+                  <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Consistency</p>
+                  <p className="text-3xl font-bold text-emerald-500">{sessionSummary.healthScore}%</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Duration</p>
+                  <p className="text-2xl font-bold text-slate-700">{formatTime(sessionSummary.totalSessionDurationMs)}</p>
+                </div>
               </div>
-              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Duration</p>
-                <p className="text-2xl font-bold text-slate-700">{formatTime(sessionSummary.totalSessionDurationMs)}</p>
+              <div className="bg-emerald-50 p-4 rounded-2xl border border-emerald-100/50">
+                <p className="text-xs font-semibold text-emerald-600 uppercase tracking-wider mb-1">Stable</p>
+                <p className="text-xl font-bold text-emerald-700">{formatTime(sessionSummary.timeInGoodMs)}</p>
               </div>
-              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">In Zone</p>
-                <p className="text-xl font-bold text-slate-700">{formatTime(sessionSummary.timeInGoodMs)}</p>
+              <div className="bg-amber-50 p-4 rounded-2xl border border-amber-100/50">
+                <p className="text-xs font-semibold text-amber-600 uppercase tracking-wider mb-1">Drifting</p>
+                <p className="text-xl font-bold text-amber-700">{formatTime(sessionSummary.timeInDriftingMs)}</p>
               </div>
-              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Drifts</p>
-                <p className="text-xl font-bold text-slate-700">{sessionSummary.deviationCount}</p>
+              <div className="bg-rose-50 p-4 rounded-2xl border border-rose-100/50">
+                <p className="text-xs font-semibold text-rose-600 uppercase tracking-wider mb-1">Corrective</p>
+                <p className="text-xl font-bold text-rose-700">{formatTime(sessionSummary.timeInCorrectiveMs)}</p>
+              </div>
+              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/50">
+                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Away</p>
+                <p className="text-xl font-bold text-slate-600">{formatTime(sessionSummary.timeInLowConfidenceMs)}</p>
               </div>
             </div>
             <button 
@@ -165,6 +186,26 @@ function App() {
               <div className="w-full aspect-[4/3] rounded-2xl overflow-hidden bg-slate-900 relative">
                 <CameraView onPoseUpdate={handlePoseUpdate} />
                 
+                {/* Setup Checklist Overlay */}
+                {appState === 'CAMERA_READY' && (
+                  <div className="absolute inset-0 z-20 flex flex-col items-center justify-end pb-8">
+                    <div className="bg-slate-900/80 backdrop-blur-md px-6 py-4 rounded-2xl border border-slate-700/50 shadow-2xl flex gap-6">
+                      <div className="flex flex-col items-center gap-1">
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${setupChecklist.head ? 'bg-emerald-500 text-white' : 'bg-slate-800 text-slate-500'}`}>
+                          {setupChecklist.head ? <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg> : <span className="font-bold text-xs">?</span>}
+                        </div>
+                        <span className={`text-xs font-semibold ${setupChecklist.head ? 'text-white' : 'text-slate-500'}`}>HEAD</span>
+                      </div>
+                      <div className="flex flex-col items-center gap-1">
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${setupChecklist.shoulders ? 'bg-emerald-500 text-white' : 'bg-slate-800 text-slate-500'}`}>
+                          {setupChecklist.shoulders ? <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg> : <span className="font-bold text-xs">?</span>}
+                        </div>
+                        <span className={`text-xs font-semibold ${setupChecklist.shoulders ? 'text-white' : 'text-slate-500'}`}>SHOULDERS</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {/* Calibration Overlay */}
                 {appState === 'CALIBRATING' && (
                   <div className="absolute inset-0 z-20 bg-slate-900/60 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center">
@@ -194,15 +235,16 @@ function App() {
 
                 <button 
                   onClick={handleStartSession}
-                  disabled={appState === 'BOOT' || appState === 'CALIBRATING'}
+                  disabled={appState === 'BOOT' || appState === 'CALIBRATING' || !setupChecklist.head || !setupChecklist.shoulders}
                   className="w-full py-4 bg-emerald-500 disabled:bg-slate-300 hover:bg-emerald-600 text-white font-bold rounded-xl shadow-lg transition active:scale-[0.98]"
                 >
-                  Calibrate & Start Session
+                  {(!setupChecklist.head || !setupChecklist.shoulders) && appState === 'CAMERA_READY' ? 'Position yourself in frame' : 'Calibrate & Start Session'}
                 </button>
               </div>
             </div>
 
             <Dashboard />
+            <SettingsPanel />
           </main>
         </div>
       );
@@ -222,10 +264,20 @@ function App() {
         </button>
       </header>
 
-      <main className="w-full max-w-md flex flex-col gap-6 flex-1">
+      <main className="w-full max-w-md flex flex-col gap-6 flex-1 relative">
         
+        {/* iOS style Volume Toast */}
+        <div className={`absolute top-4 left-1/2 -translate-x-1/2 z-50 bg-slate-800/90 backdrop-blur-md px-4 py-3 rounded-2xl shadow-2xl flex items-center gap-3 border border-slate-700/50 transition-all duration-300 ${showVolumeToast ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-4 pointer-events-none'}`}>
+          <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072M17.95 6.05a8 8 0 010 11.9m-9.5-6H5a2 2 0 00-2 2v2a2 2 0 002 2h3.5l4.5 4.5v-15L8.45 10.05z" />
+          </svg>
+          <div className="w-24 h-1.5 bg-slate-600 rounded-full overflow-hidden">
+            <div className="h-full bg-white rounded-full transition-all duration-200" style={{ width: `${volume * 100}%` }} />
+          </div>
+        </div>
+
         {/* Posture Status Hero */}
-        <div className={`bg-white p-8 rounded-[2rem] shadow-2xl transition-all duration-700 border-2 ${getBorderColor()} flex flex-col items-center text-center relative overflow-hidden`}>
+        <div className={`bg-white p-6 sm:p-8 rounded-[2rem] shadow-2xl transition-all duration-700 border-2 ${getBorderColor()} flex flex-col items-center text-center relative overflow-hidden`}>
           <div className="absolute top-0 left-0 w-full h-1 bg-slate-100">
             <div className={`h-full transition-all duration-1000 ${
               appState === 'GOOD' ? 'w-full bg-emerald-500' : 
@@ -240,9 +292,9 @@ function App() {
           </h2>
           <p className="text-slate-500 font-medium">{getStatusSubtext()}</p>
           
-          <div className="w-32 h-32 mt-8 rounded-full overflow-hidden bg-slate-900 shadow-inner ring-4 ring-slate-50 relative">
+          <div className="w-full aspect-[4/3] mt-8 rounded-2xl overflow-hidden bg-slate-900 shadow-inner ring-4 ring-slate-50 relative">
             <CameraView onPoseUpdate={handlePoseUpdate} />
-            <div className={`absolute inset-0 mix-blend-color transition-colors duration-700 ${
+            <div className={`absolute inset-0 mix-blend-color transition-colors duration-700 pointer-events-none ${
               appState === 'CORRECTIVE' ? 'bg-rose-500/20' : 
               appState === 'DRIFTING' ? 'bg-amber-500/20' : 
               'bg-transparent'
@@ -290,7 +342,7 @@ function App() {
               max="1" 
               step="0.01" 
               value={volume}
-              onChange={(e) => setVolume(parseFloat(e.target.value))}
+              onChange={(e) => handleManualVolume(parseFloat(e.target.value))}
               className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-white"
             />
           </div>

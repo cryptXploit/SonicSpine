@@ -10,6 +10,8 @@ const LM = {
   RIGHT_SHOULDER: 12,
   LEFT_HIP: 23,
   RIGHT_HIP: 24,
+  LEFT_WRIST: 15,
+  RIGHT_WRIST: 16,
 };
 
 export class LandmarkProcessor {
@@ -45,6 +47,11 @@ export class LandmarkProcessor {
     if (landmarks.length > Math.max(LM.LEFT_HIP, LM.RIGHT_HIP)) {
       postureLandmarks.leftHip = toPoint3D(landmarks[LM.LEFT_HIP]);
       postureLandmarks.rightHip = toPoint3D(landmarks[LM.RIGHT_HIP]);
+    }
+
+    if (landmarks.length > Math.max(LM.LEFT_WRIST, LM.RIGHT_WRIST)) {
+      postureLandmarks.leftWrist = toPoint3D(landmarks[LM.LEFT_WRIST]);
+      postureLandmarks.rightWrist = toPoint3D(landmarks[LM.RIGHT_WRIST]);
     }
 
     return postureLandmarks;

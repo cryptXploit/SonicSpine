@@ -1,5 +1,6 @@
 import { ConfidenceResult } from '../vision/ConfidenceEstimator';
 import { PostureConfig } from './config';
+import { SettingsManager } from '../settings/SettingsManager';
 
 export type PostureState =
   | 'BOOT'
@@ -27,6 +28,8 @@ export class PostureStateMachine {
   private onStateChange?: (newState: PostureState) => void;
   
   private lowConfidenceStartTime: number | null = null;
+  private absenceStartTime: number | null = null;
+  private recoveryStartTime: number | null = null;
 
   constructor(onStateChange?: (newState: PostureState) => void) {
     this.onStateChange = onStateChange;
@@ -65,9 +68,25 @@ export class PostureStateMachine {
     }
 
     const now = nowMs ?? performance.now();
+    const settings = SettingsManager.getSettings();
 
-    // 1. Handle Confidence Gating
-    if (ctx.confidence.level === 'LOW' || ctx.confidence.level === 'NONE') {
+    // 1. Handle Confidence Gating (Absence vs Low Tracking)
+    if (ctx.confidence.level === 'NONE') {
+      this.lowConfidenceStartTime = null; // Clear LOW tracking timer
+
+      if (this.currentState !== 'LOW_CONFIDENCE') {
+        if (this.absenceStartTime === null) {
+          this.absenceStartTime = now;
+        } else if (now - this.absenceStartTime > settings.screenPresenceGracePeriodMs) {
+          this.transitionTo('LOW_CONFIDENCE');
+        }
+      }
+      return; // Do NOT process posture features while completely absent
+    } else {
+      this.absenceStartTime = null;
+    }
+
+    if (ctx.confidence.level === 'LOW') {
       if (this.currentState !== 'LOW_CONFIDENCE') {
         if (this.lowConfidenceStartTime === null) {
           this.lowConfidenceStartTime = now;
@@ -75,13 +94,17 @@ export class PostureStateMachine {
           this.transitionTo('LOW_CONFIDENCE');
         }
       }
-      return; // Do NOT process posture features while tracking is low/lost
+      return; // Do NOT process posture features while tracking is low
     } else {
       this.lowConfidenceStartTime = null;
     }
 
     // 2. Recovery from LOW_CONFIDENCE
     if (this.currentState === 'LOW_CONFIDENCE' && ctx.confidence.level === 'HIGH') {
+      // Clear timers
+      this.absenceStartTime = null;
+      this.lowConfidenceStartTime = null;
+      
       // Re-evaluate based on current flags
       if (ctx.stateFlags.isCorrective) {
         this.transitionTo('CORRECTIVE');
@@ -115,18 +138,29 @@ export class PostureStateMachine {
         if (ctx.stateFlags.isRecovered) {
           this.transitionTo('RECOVERING');
         } else if (!ctx.stateFlags.isCorrective && !ctx.stateFlags.isDrifting) {
-          // If we immediately lost the corrective signal but aren't fully recovered yet, we can transition to RECOVERING
+          // If we immediately lost the corrective signal but aren't fully recovered yet
           this.transitionTo('RECOVERING');
         }
         break;
 
       case 'RECOVERING':
         if (ctx.stateFlags.isCorrective) {
+          this.recoveryStartTime = null;
           this.transitionTo('CORRECTIVE');
         } else if (ctx.stateFlags.isDrifting) {
+          this.recoveryStartTime = null;
           this.transitionTo('DRIFTING');
         } else if (ctx.stateFlags.isRecovered) {
-          this.transitionTo('GOOD');
+          if (this.recoveryStartTime === null) {
+            this.recoveryStartTime = now;
+          }
+          if (now - this.recoveryStartTime >= settings.recoveryDelayMs) {
+            this.recoveryStartTime = null;
+            this.transitionTo('GOOD');
+          }
+        } else {
+          // If we somehow lost isRecovered without hitting drifting/corrective flags
+          this.recoveryStartTime = null;
         }
         break;
     }

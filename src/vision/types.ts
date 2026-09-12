@@ -14,6 +14,8 @@ export interface PostureLandmarks {
   rightShoulder: Point3D;
   leftHip?: Point3D;
   rightHip?: Point3D;
+  leftWrist?: Point3D;
+  rightWrist?: Point3D;
 }
 
 export interface InferenceResult {

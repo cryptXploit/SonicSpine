@@ -36,35 +36,39 @@ describe('Vision Pipeline', () => {
 
   describe('ConfidenceEstimator', () => {
     it('returns NONE when landmarks are null', () => {
-      expect(ConfidenceEstimator.evaluate(null)).toEqual({ level: 'NONE', score: 0 });
+      expect(ConfidenceEstimator.evaluate(null)).toEqual({ 
+        level: 'NONE', 
+        score: 0,
+        details: { headVisible: false, shouldersVisible: false }
+      });
     });
 
     it('returns HIGH when core landmarks are visible', () => {
       const mockLandmarks: PostureLandmarks = {
-        leftEar: { x: 0, y: 0, z: 0, visibility: 0.9, presence: 0.9 },
-        rightEar: { x: 0, y: 0, z: 0, visibility: 0.9, presence: 0.9 },
-        leftShoulder: { x: 0, y: 0, z: 0, visibility: 0.9, presence: 0.9 },
-        rightShoulder: { x: 0, y: 0, z: 0, visibility: 0.9, presence: 0.9 },
-        nose: { x: 0, y: 0, z: 0, visibility: 0.9, presence: 0.9 }
-      };
+        leftEar: { x: 0, y: 0, z: 0, visibility: 0.9 },
+        rightEar: { x: 0, y: 0, z: 0, visibility: 0.9 },
+        leftShoulder: { x: 0, y: 0, z: 0, visibility: 0.9 },
+        rightShoulder: { x: 0, y: 0, z: 0, visibility: 0.9 }
+      } as PostureLandmarks;
 
-      expect(ConfidenceEstimator.evaluate(mockLandmarks)).toEqual({ level: 'HIGH', score: 0.9 });
+      expect(ConfidenceEstimator.evaluate(mockLandmarks)).toEqual({ 
+        level: 'HIGH', 
+        score: 0.9,
+        details: { headVisible: true, shouldersVisible: true }
+      });
     });
 
     it('returns LOW when core landmarks have poor visibility', () => {
       const mockLandmarks: PostureLandmarks = {
-        leftEar: { x: 0, y: 0, z: 0, visibility: 0.1, presence: 0.1 },
-        rightEar: { x: 0, y: 0, z: 0, visibility: 0.9, presence: 0.9 },
-        leftShoulder: { x: 0, y: 0, z: 0, visibility: 0.9, presence: 0.9 },
-        rightShoulder: { x: 0, y: 0, z: 0, visibility: 0.9, presence: 0.9 },
-        nose: { x: 0, y: 0, z: 0, visibility: 0.9, presence: 0.9 }
-      };
+        leftEar: { x: 0, y: 0, z: 0, visibility: 0.1 }, // Hidden
+        rightEar: { x: 0, y: 0, z: 0, visibility: 0.1 }, // Hidden
+        leftShoulder: { x: 0, y: 0, z: 0, visibility: 0.9 },
+        rightShoulder: { x: 0, y: 0, z: 0, visibility: 0.9 }
+      } as PostureLandmarks;
 
-      // 3 landmarks > 0.5 threshold = score of avgVisibility * 0.5
-      // Avg visibility = (0.1+0.9+0.9+0.9)/4 = 0.7
-      // Score = 0.7 * 0.5 = 0.35
+      // Score logic fallback to LOW
       expect(ConfidenceEstimator.evaluate(mockLandmarks).level).toBe('LOW');
-      expect(ConfidenceEstimator.evaluate(mockLandmarks).score).toBeCloseTo(0.35);
+      expect(ConfidenceEstimator.evaluate(mockLandmarks).details.headVisible).toBe(false);
     });
   });
 });

@@ -52,4 +52,23 @@ describe('SessionManager', () => {
     const manager = new SessionManager();
     expect(manager.endSession(1000)).toBeNull();
   });
+
+  it('tracks LOW_CONFIDENCE without penalizing health score', () => {
+    const manager = new SessionManager();
+    manager.startSession(0); // READY
+    
+    // Good for 5000ms
+    manager.updateState('LOW_CONFIDENCE', 5000); 
+    
+    // Away for 5000ms
+    const result = manager.endSession(10000); 
+
+    // Total tracked time for score = 5000ms (Good)
+    // Low confidence time = 5000ms
+    // Score should be 100% based on the 5000ms they were actually tracked
+    expect(result?.timeInGoodMs).toBe(5000);
+    expect(result?.timeInLowConfidenceMs).toBe(5000);
+    expect(result?.healthScore).toBe(100);
+    expect(result?.totalSessionDurationMs).toBe(10000);
+  });
 });

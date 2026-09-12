@@ -1,12 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { PostureStateMachine, StateContext } from './PostureStateMachine';
 import { ConfidenceResult } from '../vision/ConfidenceEstimator';
+import { SettingsManager } from '../settings/SettingsManager';
 
 describe('PostureStateMachine', () => {
   let sm: PostureStateMachine;
   let onStateChange: (state: string) => void;
-  const highConf: ConfidenceResult = { level: 'HIGH', score: 0.9 };
-  const lowConf: ConfidenceResult = { level: 'LOW', score: 0.3 };
+  const highConf: ConfidenceResult = { level: 'HIGH', score: 0.9, details: { headVisible: true, shouldersVisible: true } };
+  const lowConf: ConfidenceResult = { level: 'LOW', score: 0.3, details: { headVisible: false, shouldersVisible: false } };
 
   beforeEach(() => {
     onStateChange = vi.fn();
@@ -99,6 +100,48 @@ describe('PostureStateMachine', () => {
       // Recover
       sm.processFrame(createCtx({ confidence: highConf }), 5002);
       expect(sm.getState()).toBe('GOOD');
+    });
+
+    it('handles user absence (NONE confidence) gracefully with a timeout', () => {
+      const noneConf: ConfidenceResult = { level: 'NONE', score: 0, details: { headVisible: false, shouldersVisible: false } };
+      sm.processFrame(createCtx({ confidence: noneConf }), 0);
+      expect(sm.getState()).toBe('GOOD');
+
+      // Fast forward 5001ms (using default SettingsManager screenPresenceGracePeriodMs)
+      sm.processFrame(createCtx({ confidence: noneConf }), 5001);
+      expect(sm.getState()).toBe('LOW_CONFIDENCE');
+    });
+
+    it('handles Recovery Delay correctly', () => {
+      // We will mutate the real SettingsManager since we are not fully resetting modules in this test,
+      // but we will restore it after.
+      const originalGetSettings = SettingsManager.getSettings;
+      SettingsManager.getSettings = vi.fn().mockReturnValue({
+        screenPresenceGracePeriodMs: 5000,
+        recoveryDelayMs: 2000,
+        lowConfidenceAudioBehavior: 'CLEAR'
+      });
+
+      sm.processFrame(createCtx({ stateFlags: { isDrifting: true, isCorrective: true, isRecovered: false } }), 0);
+      expect(sm.getState()).toBe('CORRECTIVE');
+
+      sm.processFrame(createCtx({ stateFlags: { isDrifting: false, isCorrective: false, isRecovered: false } }), 100);
+      expect(sm.getState()).toBe('RECOVERING');
+
+      // Now isRecovered becomes true, but we have a 2000ms delay
+      sm.processFrame(createCtx({ stateFlags: { isDrifting: false, isCorrective: false, isRecovered: true } }), 200);
+      expect(sm.getState()).toBe('RECOVERING'); // Should still be recovering!
+
+      // Fast forward 1000ms
+      sm.processFrame(createCtx({ stateFlags: { isDrifting: false, isCorrective: false, isRecovered: true } }), 1200);
+      expect(sm.getState()).toBe('RECOVERING');
+
+      // Fast forward past 2000ms
+      sm.processFrame(createCtx({ stateFlags: { isDrifting: false, isCorrective: false, isRecovered: true } }), 2200);
+      expect(sm.getState()).toBe('GOOD');
+      
+      // Restore the mock
+      SettingsManager.getSettings = originalGetSettings;
     });
   });
 });

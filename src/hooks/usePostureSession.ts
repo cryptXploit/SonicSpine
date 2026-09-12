@@ -6,6 +6,8 @@ import { SessionManager, SessionAnalytics } from '../analytics/SessionManager';
 import { AudioEngine } from '../audio/AudioEngine';
 import { PostureFeatures } from '../posture/types';
 import { PostureLandmarks } from '../vision/types';
+import { GestureRecognizer } from '../vision/GestureRecognizer';
+import { SettingsManager } from '../settings/SettingsManager';
 
 export function usePostureSession() {
   const [appState, setAppState] = useState<PostureState>('BOOT');
@@ -13,11 +15,27 @@ export function usePostureSession() {
   const [calibrationProgress, setCalibrationProgress] = useState(0);
   const [calibrationError, setCalibrationError] = useState<string>('');
   const [sessionSummary, setSessionSummary] = useState<SessionAnalytics | null>(null);
+  const [volume, setVolume] = useState(1.0);
+
+  const [setupChecklist, setSetupChecklist] = useState({ head: false, shoulders: false });
 
   const engineRef = useRef<CalibrationEngine>(new CalibrationEngine(30, 200));
   const filterRef = useRef<TemporalFilter>(new TemporalFilter(0.2));
   const audioEngineRef = useRef<AudioEngine>(new AudioEngine());
   const sessionManagerRef = useRef<SessionManager>(new SessionManager());
+  const checklistRef = useRef({ head: false, shoulders: false });
+  
+  const gestureRecognizerRef = useRef<GestureRecognizer>(new GestureRecognizer((event) => {
+    const currentVol = audioEngineRef.current.getVolume();
+    let newVol = currentVol;
+    if (event === 'VOLUME_UP') {
+      newVol = Math.min(1.0, currentVol + 0.15);
+    } else if (event === 'VOLUME_DOWN') {
+      newVol = Math.max(0.0, currentVol - 0.15);
+    }
+    audioEngineRef.current.setVolume(newVol);
+    setVolume(newVol); // Sync with React UI
+  }));
 
   // Diagnostic refs (avoiding state to prevent thrashing)
   const lastDiagnosticConfidence = useRef<import('../vision/ConfidenceEstimator').ConfidenceResult | null>(null);
@@ -54,12 +72,29 @@ export function usePostureSession() {
   }, []);
 
   const handlePoseUpdate = useCallback((
-    _landmarks: PostureLandmarks | null, 
+    landmarks: PostureLandmarks | null, 
     features: PostureFeatures | null, 
     confidence: import('../vision/ConfidenceEstimator').ConfidenceResult
   ) => {
     const sm = stateMachineRef.current;
     const currentState = sm.getState();
+    const settings = SettingsManager.getSettings();
+
+    if (settings.enableGestures) {
+      gestureRecognizerRef.current.process(landmarks, performance.now());
+    } else {
+      gestureRecognizerRef.current.reset();
+    }
+
+    if (currentState === 'CAMERA_READY') {
+      const newHead = confidence.details?.headVisible || false;
+      const newShoulders = confidence.details?.shouldersVisible || false;
+      
+      if (newHead !== checklistRef.current.head || newShoulders !== checklistRef.current.shoulders) {
+        checklistRef.current = { head: newHead, shoulders: newShoulders };
+        setSetupChecklist(checklistRef.current);
+      }
+    }
 
     if (currentState === 'CALIBRATING') {
       if (confidence.level === 'HIGH' && features) {
@@ -150,12 +185,20 @@ export function usePostureSession() {
     setSessionSummary(null);
   }, []);
 
+  const handleManualVolume = useCallback((vol: number) => {
+    audioEngineRef.current.setVolume(vol);
+    setVolume(vol);
+  }, []);
+
   return {
     appState,
     baseline,
     calibrationProgress,
     calibrationError,
     sessionSummary,
+    volume,
+    setupChecklist,
+    handleManualVolume,
     audioEngine: audioEngineRef.current,
     handlePoseUpdate,
     startCalibration,

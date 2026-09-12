@@ -1,5 +1,6 @@
 import { PostureState } from '../posture/PostureStateMachine';
 import { PostureConfig } from '../posture/config';
+import { SettingsManager } from '../settings/SettingsManager';
 
 export type AudioState = 'UNINITIALIZED' | 'READY' | 'PLAYING' | 'PAUSED' | 'ERROR';
 
@@ -114,6 +115,10 @@ export class AudioEngine {
     }
   }
 
+  public getVolume(): number {
+    return this.audioElement ? this.audioElement.volume : 1.0;
+  }
+
   public resetFeedback(): void {
     this.setMuffling(20000, 1.0);
   }
@@ -142,12 +147,22 @@ export class AudioEngine {
   }
 
   public updateState(state: PostureState): void {
+    const settings = SettingsManager.getSettings();
+
     switch (state) {
       case 'GOOD':
       case 'READY':
       case 'CALIBRATING':
-      case 'LOW_CONFIDENCE':
         this.setMuffling(20000, 1.0);
+        break;
+      case 'LOW_CONFIDENCE':
+        if (settings.lowConfidenceAudioBehavior === 'CLEAR') {
+          this.setMuffling(20000, 1.0);
+        } else if (settings.lowConfidenceAudioBehavior === 'PAUSE') {
+          // Effectively mute via Gain to avoid autoplay breaking from HTMLAudioElement.pause()
+          this.setMuffling(this.filter ? this.filter.frequency.value : 20000, 0.0);
+        }
+        // 'MAINTAIN' takes no action, preserving previous filters
         break;
       case 'DRIFTING':
         this.setMuffling(4000, 0.85);
