@@ -7,6 +7,7 @@ import { AudioEngine } from '../audio/AudioEngine';
 import { PostureFeatures } from '../posture/types';
 import { PostureLandmarks } from '../vision/types';
 import { GestureRecognizer } from '../vision/GestureRecognizer';
+import { MusicGestureRecognizer, MusicAction } from '../vision/MusicGestureRecognizer';
 import { SettingsManager } from '../settings/SettingsManager';
 
 export function usePostureSession() {
@@ -16,12 +17,21 @@ export function usePostureSession() {
   const [calibrationError, setCalibrationError] = useState<string>('');
   const [sessionSummary, setSessionSummary] = useState<SessionAnalytics | null>(null);
   const [volume, setVolume] = useState(1.0);
+  const [musicPlaybackState, setMusicPlaybackState] = useState({ isPlaying: false, trackIndex: 0 });
 
   const [setupChecklist, setSetupChecklist] = useState({ head: false, shoulders: false });
 
   const engineRef = useRef<CalibrationEngine>(new CalibrationEngine(30, 200));
   const filterRef = useRef<TemporalFilter>(new TemporalFilter(0.2));
   const audioEngineRef = useRef<AudioEngine>(new AudioEngine());
+  
+  // Bind AudioEngine state to React state
+  if (!audioEngineRef.current.onStateChange) {
+    audioEngineRef.current.onStateChange = (isPlaying, trackIndex) => {
+      setMusicPlaybackState({ isPlaying, trackIndex });
+    };
+  }
+
   const sessionManagerRef = useRef<SessionManager>(new SessionManager());
   const checklistRef = useRef({ head: false, shoulders: false });
   
@@ -29,6 +39,20 @@ export function usePostureSession() {
     // Volume is already smoothed and clamped 0.0 - 1.0
     audioEngineRef.current.setVolume(volume);
     setVolume(volume); // Sync with React UI
+  }));
+
+  const musicGestureRecognizerRef = useRef<MusicGestureRecognizer>(new MusicGestureRecognizer((action) => {
+    switch (action) {
+      case MusicAction.NEXT:
+        audioEngineRef.current.playNext();
+        break;
+      case MusicAction.PREVIOUS:
+        audioEngineRef.current.playPrevious();
+        break;
+      case MusicAction.PAUSE:
+        audioEngineRef.current.togglePause();
+        break;
+    }
   }));
 
   // Diagnostic refs (avoiding state to prevent thrashing)
@@ -76,8 +100,10 @@ export function usePostureSession() {
 
     if (settings.enableGestures) {
       gestureRecognizerRef.current.process(landmarks);
+      musicGestureRecognizerRef.current.process(landmarks, performance.now());
     } else {
       gestureRecognizerRef.current.reset();
+      musicGestureRecognizerRef.current.reset();
     }
 
     if (currentState === 'CAMERA_READY') {
@@ -191,6 +217,7 @@ export function usePostureSession() {
     calibrationError,
     sessionSummary,
     volume,
+    musicPlaybackState,
     setupChecklist,
     handleManualVolume,
     audioEngine: audioEngineRef.current,
@@ -207,7 +234,9 @@ export function usePostureSession() {
       motionStability: lastDiagnosticMotion.current,
       stateFlags: lastDiagnosticFlags.current,
       evidence: lastDiagnosticEvidence.current,
-      audio: audioEngineRef.current.getDiagnostics()
+      audio: audioEngineRef.current.getDiagnostics(),
+      musicGestureState: musicGestureRecognizerRef.current.getState(),
+      musicDebugInfo: musicGestureRecognizerRef.current.debugInfo
     })
   };
 }

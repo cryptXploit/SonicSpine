@@ -17,8 +17,16 @@ const LM = {
 
 // Hand Landmark constants
 const HLM = {
+  WRIST: 0,
   THUMB_TIP: 4,
-  INDEX_TIP: 8
+  INDEX_MCP: 5,
+  INDEX_TIP: 8,
+  MIDDLE_MCP: 9,
+  MIDDLE_TIP: 12,
+  RING_MCP: 13,
+  RING_TIP: 16,
+  PINKY_MCP: 17,
+  PINKY_TIP: 20
 };
 
 export class LandmarkProcessor {
@@ -29,7 +37,6 @@ export class LandmarkProcessor {
 
     const poseLandmarks = result.pose.landmarks[0];
     
-    // Ensure all required pose landmarks exist
     if (poseLandmarks.length <= Math.max(LM.NOSE, LM.LEFT_EAR, LM.RIGHT_EAR, LM.LEFT_SHOULDER, LM.RIGHT_SHOULDER)) {
       return null;
     }
@@ -62,20 +69,81 @@ export class LandmarkProcessor {
 
     // Now extract genuine finger landmarks from HandLandmarker if available
     if (result.hands && result.hands.landmarks && result.hands.landmarks.length > 0) {
-      // Hands might be left or right. We can check handedness or just use the first hand.
-      // For volume control, we just grab whichever hand is visible and map it to a generic 'index' and 'thumb'.
-      // We will map it to `leftIndex` and `leftThumb` for convenience, GestureRecognizer checks both anyway.
-      
-      const handLandmarks = result.hands.landmarks[0];
-      const handedness = result.hands.handedness[0][0].categoryName; // "Left" or "Right"
+      for (let i = 0; i < result.hands.landmarks.length; i++) {
+        const handLandmarks = result.hands.landmarks[i];
+        
+        let handedness = 'Left'; // Default fallback
+        if (result.hands.handednesses && result.hands.handednesses[i] && result.hands.handednesses[i].length > 0) {
+          handedness = result.hands.handednesses[i][0].categoryName; // Usually "Left" or "Right"
+        }
 
-      if (handLandmarks.length > Math.max(HLM.THUMB_TIP, HLM.INDEX_TIP)) {
-        if (handedness === 'Left') {
-          postureLandmarks.leftIndex = toPoint3D(handLandmarks[HLM.INDEX_TIP]);
-          postureLandmarks.leftThumb = toPoint3D(handLandmarks[HLM.THUMB_TIP]);
-        } else {
-          postureLandmarks.rightIndex = toPoint3D(handLandmarks[HLM.INDEX_TIP]);
-          postureLandmarks.rightThumb = toPoint3D(handLandmarks[HLM.THUMB_TIP]);
+        if (handLandmarks.length > Math.max(HLM.THUMB_TIP, HLM.INDEX_TIP, HLM.INDEX_MCP, HLM.MIDDLE_MCP, HLM.RING_MCP, HLM.PINKY_MCP, HLM.MIDDLE_TIP, HLM.RING_TIP, HLM.PINKY_TIP, HLM.WRIST)) {
+          // Verify valid numbers exist
+          const indexLm = handLandmarks[HLM.INDEX_TIP];
+          const thumbLm = handLandmarks[HLM.THUMB_TIP];
+          const idxMcpLm = handLandmarks[HLM.INDEX_MCP];
+          const midMcpLm = handLandmarks[HLM.MIDDLE_MCP];
+          const ringMcpLm = handLandmarks[HLM.RING_MCP];
+          const pkyMcpLm = handLandmarks[HLM.PINKY_MCP];
+          const middleLm = handLandmarks[HLM.MIDDLE_TIP];
+          const ringLm = handLandmarks[HLM.RING_TIP];
+          const pinkyLm = handLandmarks[HLM.PINKY_TIP];
+          const wristLm = handLandmarks[HLM.WRIST];
+
+          if (
+            Number.isFinite(indexLm.x) && Number.isFinite(indexLm.y) &&
+            Number.isFinite(thumbLm.x) && Number.isFinite(thumbLm.y) &&
+            Number.isFinite(idxMcpLm.x) && Number.isFinite(idxMcpLm.y) &&
+            Number.isFinite(midMcpLm.x) && Number.isFinite(midMcpLm.y) &&
+            Number.isFinite(ringMcpLm.x) && Number.isFinite(ringMcpLm.y) &&
+            Number.isFinite(pkyMcpLm.x) && Number.isFinite(pkyMcpLm.y) &&
+            Number.isFinite(middleLm.x) && Number.isFinite(middleLm.y) &&
+            Number.isFinite(ringLm.x) && Number.isFinite(ringLm.y) &&
+            Number.isFinite(pinkyLm.x) && Number.isFinite(pinkyLm.y) &&
+            Number.isFinite(wristLm.x) && Number.isFinite(wristLm.y)
+          ) {
+            const indexTipPt = toPoint3D(indexLm);
+            const thumbTipPt = toPoint3D(thumbLm);
+            const indexMcpPt = toPoint3D(idxMcpLm);
+            const middleMcpPt = toPoint3D(midMcpLm);
+            const ringMcpPt = toPoint3D(ringMcpLm);
+            const pinkyMcpPt = toPoint3D(pkyMcpLm);
+            const middleTipPt = toPoint3D(middleLm);
+            const ringTipPt = toPoint3D(ringLm);
+            const pinkyTipPt = toPoint3D(pinkyLm);
+            const wristHandPt = toPoint3D(wristLm);
+            
+            // Calculate a stable hand scale reference (Index MCP to Pinky MCP)
+            const dx = idxMcpLm.x - pkyMcpLm.x;
+            const dy = idxMcpLm.y - pkyMcpLm.y;
+            const handScale = Math.max(0.01, Math.sqrt(dx * dx + dy * dy)); // Avoid div-by-zero
+
+            if (handedness === 'Left') {
+              postureLandmarks.leftIndex = indexTipPt;
+              postureLandmarks.leftThumb = thumbTipPt;
+              postureLandmarks.leftIndexMCP = indexMcpPt;
+              postureLandmarks.leftMiddleMCP = middleMcpPt;
+              postureLandmarks.leftRingMCP = ringMcpPt;
+              postureLandmarks.leftPinkyMCP = pinkyMcpPt;
+              postureLandmarks.leftMiddle = middleTipPt;
+              postureLandmarks.leftRing = ringTipPt;
+              postureLandmarks.leftPinky = pinkyTipPt;
+              postureLandmarks.leftWristHand = wristHandPt;
+              postureLandmarks.leftHandScale = handScale;
+            } else {
+              postureLandmarks.rightIndex = indexTipPt;
+              postureLandmarks.rightThumb = thumbTipPt;
+              postureLandmarks.rightIndexMCP = indexMcpPt;
+              postureLandmarks.rightMiddleMCP = middleMcpPt;
+              postureLandmarks.rightRingMCP = ringMcpPt;
+              postureLandmarks.rightPinkyMCP = pinkyMcpPt;
+              postureLandmarks.rightMiddle = middleTipPt;
+              postureLandmarks.rightRing = ringTipPt;
+              postureLandmarks.rightPinky = pinkyTipPt;
+              postureLandmarks.rightWristHand = wristHandPt;
+              postureLandmarks.rightHandScale = handScale;
+            }
+          }
         }
       }
     }

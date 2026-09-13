@@ -13,7 +13,15 @@ export class AudioEngine {
   
   private state: AudioState = 'UNINITIALIZED';
   private primarySrc = '/ambient.wav';
-  private fallbackSrc = 'https://actions.google.com/sounds/v1/water/waves_crashing_on_rock_beach.ogg'; // Safe external fallback
+  private fallbackSrc = 'https://actions.google.com/sounds/v1/water/waves_crashing_on_rock_beach.ogg';
+  
+  public onStateChange?: (isPlaying: boolean, trackIndex: number) => void;
+
+  private notifyStateChange() {
+    if (this.onStateChange) {
+      this.onStateChange(this.state === 'PLAYING', this.currentTrackIndex);
+    }
+  }
   
   public initialize(): void {
     if (this.state !== 'UNINITIALIZED') return;
@@ -89,17 +97,17 @@ export class AudioEngine {
   public play(): void {
     if (this.state === 'ERROR' || !this.audioElement || !this.ctx) return;
 
-    // Both resume() and play() MUST be called synchronously in the user gesture!
-    // We do NOT await them here, because awaiting pushes the remainder of the function out of the gesture context.
     if (this.ctx.state === 'suspended') {
       this.ctx.resume().catch(e => console.error("AudioContext resume failed:", e));
     }
     
     this.audioElement.play().then(() => {
       this.state = 'PLAYING';
+      this.notifyStateChange();
     }).catch(e => {
       console.error("HTMLAudioElement play failed:", e);
       this.state = 'ERROR';
+      this.notifyStateChange();
     });
   }
 
@@ -107,6 +115,7 @@ export class AudioEngine {
     if (this.state === 'ERROR' || !this.audioElement) return;
     this.audioElement.pause();
     this.state = 'PAUSED';
+    this.notifyStateChange();
   }
 
   public setVolume(vol: number): void {
@@ -119,6 +128,69 @@ export class AudioEngine {
     return this.audioElement ? this.audioElement.volume : 1.0;
   }
 
+  private tracks: string[] = [
+    '/ambient.wav',
+    '/assets/audio/focus1.ogg',
+    '/assets/audio/focus2.ogg',
+    '/assets/audio/focus3.ogg'
+  ];
+  private currentTrackIndex = 0;
+
+  public playNext(): void {
+    if (this.tracks.length === 0) return;
+    this.currentTrackIndex = (this.currentTrackIndex + 1) % this.tracks.length;
+    this.loadAndPlayCurrentTrack();
+    this.notifyStateChange();
+  }
+
+  public playPrevious(): void {
+    if (this.tracks.length === 0) return;
+    this.currentTrackIndex = (this.currentTrackIndex - 1 + this.tracks.length) % this.tracks.length;
+    this.loadAndPlayCurrentTrack();
+    this.notifyStateChange();
+  }
+
+  public togglePause(): void {
+    if (this.state === 'PLAYING') {
+      this.pause();
+    } else if (this.state === 'PAUSED' || this.state === 'READY') {
+      this.play();
+    }
+  }
+  
+  private async loadAndPlayCurrentTrack(): Promise<void> {
+    if (!this.audioElement) return;
+    
+    const wasPlaying = this.state === 'PLAYING';
+    if (wasPlaying) {
+      this.audioElement.pause();
+    }
+    
+    this.primarySrc = this.tracks[this.currentTrackIndex];
+    this.audioElement.src = this.primarySrc;
+    this.audioElement.load();
+    
+    if (wasPlaying) {
+      try {
+        await this.audioElement.play();
+        this.state = 'PLAYING';
+        this.notifyStateChange();
+      } catch (e) {
+        console.error('Failed to play new track:', e);
+        this.state = 'ERROR';
+        this.notifyStateChange();
+      }
+    }
+  }
+
+  public getTrackIndex(): number {
+    return this.currentTrackIndex;
+  }
+
+  public getTrackCount(): number {
+    return this.tracks.length;
+  }
+
   public resetFeedback(): void {
     this.setMuffling(20000, 1.0);
   }
@@ -127,7 +199,8 @@ export class AudioEngine {
     return {
       state: this.state,
       actualFreq: this.filter ? this.filter.frequency.value : 0,
-      actualGain: this.gain ? this.gain.gain.value : 0
+      actualGain: this.gain ? this.gain.gain.value : 0,
+      trackIndex: this.currentTrackIndex
     };
   }
 

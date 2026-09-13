@@ -13,43 +13,61 @@ function App() {
     calibrationProgress,
     calibrationError,
     sessionSummary,
+    volume,
+    musicPlaybackState,
+    setupChecklist,
+    handleManualVolume,
     audioEngine,
     handlePoseUpdate,
     startCalibration,
     stopSession,
     resetCalibration,
     clearSummary,
-    getDiagnostics,
-    volume,
-    setupChecklist,
-    handleManualVolume
+    getDiagnostics
   } = usePostureSession();
 
-  const [isPlaying, setIsPlaying] = useState(false);
   const [showVolumeToast, setShowVolumeToast] = useState(false);
-  const volumeRef = useRef(volume);
+  const volumeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // When volume changes from gesture, show toast
   useEffect(() => {
-    // Only show toast if it changes programmatically after initial mount
-    if (volumeRef.current !== volume) {
-      volumeRef.current = volume;
+    if (appState !== 'BOOT' && appState !== 'CALIBRATING') {
       setShowVolumeToast(true);
-      const timer = setTimeout(() => setShowVolumeToast(false), 2000);
-      return () => clearTimeout(timer);
+      if (volumeTimeoutRef.current) clearTimeout(volumeTimeoutRef.current);
+      volumeTimeoutRef.current = setTimeout(() => {
+        setShowVolumeToast(false);
+      }, 2000);
+    }
+    return () => {
+      if (volumeTimeoutRef.current) clearTimeout(volumeTimeoutRef.current);
     }
   }, [volume]);
 
-  // Sync React UI state with AudioEngine state via polling or events. 
-  // For simplicity, we just sync it on user interactions since audioEngine controls play/pause internally.
-    const handleStartSession = () => {
+  // Derived state for the UI
+  const isPlaying = musicPlaybackState.isPlaying;
+  const trackIndex = musicPlaybackState.trackIndex;
+  const trackTitles = ['Focus 1 (Waves)', 'Focus 2 (Rain)', 'Focus 3 (Storm)'];
+  const currentTrackTitle = trackTitles[trackIndex % trackTitles.length] || `Track ${trackIndex + 1}`;
+
+  const toggleAudio = () => {
+    audioEngine.togglePause();
+  };
+
+  const playNext = () => {
+    audioEngine.playNext();
+  };
+
+  const playPrevious = () => {
+    audioEngine.playPrevious();
+  };
+
+  const handleStartSession = () => {
     // startCalibration internally calls audioEngine.play() synchronously!
     startCalibration();
-    setIsPlaying(true);
   };
 
   const handleStopSession = async () => {
     stopSession();
-    setIsPlaying(false);
     
     // the summary is retrieved inside stopSession and state is set internally by hook
     if (sessionSummary) {
@@ -61,19 +79,8 @@ function App() {
     }
   };
 
-  const toggleAudio = () => {
-    if (isPlaying) {
-      audioEngine.pause();
-      setIsPlaying(false);
-    } else {
-      audioEngine.play();
-      setIsPlaying(true);
-    }
-  };
-
   const handleResetCalibration = () => {
     resetCalibration();
-    setIsPlaying(false);
   };
 
   const getStatusSubtext = () => {
@@ -276,8 +283,11 @@ function App() {
           </div>
         </div>
 
+        {/* Temporary Physical Debug Overlay */}
+        <MusicDebugOverlay getDiagnostics={getDiagnostics} />
+
         {/* Posture Status Hero */}
-        <div className={`bg-white p-6 sm:p-8 rounded-[2rem] shadow-2xl transition-all duration-700 border-2 ${getBorderColor()} flex flex-col items-center text-center relative overflow-hidden`}>
+        <div className={`bg-white p-6 sm:p-8 rounded-[2rem] shadow-2xl transition-all duration-700 border-2 ${getBorderColor()} flex flex-col items-center text-center relative overflow-hidden mt-4`}>
           <div className="absolute top-0 left-0 w-full h-1 bg-slate-100">
             <div className={`h-full transition-all duration-1000 ${
               appState === 'GOOD' ? 'w-full bg-emerald-500' : 
@@ -304,37 +314,45 @@ function App() {
 
         {/* Music Controls */}
         <div className="bg-slate-900 p-6 rounded-[2rem] shadow-xl flex flex-col gap-4 relative overflow-hidden">
-          {/* Subtle audio waveform decoration */}
-          <div className="absolute right-4 top-1/2 -translate-y-1/2 opacity-10 flex gap-1 items-center">
-             <div className="w-1 h-8 bg-white rounded-full animate-pulse"></div>
-             <div className="w-1 h-12 bg-white rounded-full animate-pulse delay-75"></div>
-             <div className="w-1 h-6 bg-white rounded-full animate-pulse delay-150"></div>
-             <div className="w-1 h-10 bg-white rounded-full animate-pulse delay-300"></div>
-          </div>
-
-          <div className="flex justify-between items-start relative z-10">
+          <div className="flex justify-between items-center relative z-10">
             <div>
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Audio Feedback</p>
-              <p className="text-white font-medium">Ambient Focus</p>
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Now Playing</p>
+              <p className="text-white font-medium">{currentTrackTitle}</p>
               <p className="text-xs text-emerald-400 mt-1 flex items-center gap-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-                {appState === 'GOOD' ? 'Clear' : appState === 'DRIFTING' ? 'Softening' : appState === 'CORRECTIVE' ? 'Muffled' : 'Restoring'}
+                Track {trackIndex + 1} of {trackTitles.length}
               </p>
             </div>
 
-            <button 
-              onClick={toggleAudio}
-              className="w-14 h-14 bg-white text-slate-900 rounded-full flex items-center justify-center shadow-lg hover:scale-105 active:scale-95 transition-all"
-            >
-              {isPlaying ? (
-                <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M6 4h4v16H6zm8 0h4v16h-4z"/></svg>
-              ) : (
-                <svg className="w-6 h-6 ml-1" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-              )}
-            </button>
+            <div className="flex items-center gap-2">
+              <button 
+                onClick={playPrevious}
+                className="w-10 h-10 bg-slate-800 text-white rounded-full flex items-center justify-center hover:bg-slate-700 transition-all"
+              >
+                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
+              </button>
+              
+              <button 
+                onClick={toggleAudio}
+                className="w-14 h-14 bg-white text-slate-900 rounded-full flex items-center justify-center shadow-lg hover:scale-105 active:scale-95 transition-all"
+              >
+                {isPlaying ? (
+                  <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M6 4h4v16H6zm8 0h4v16h-4z"/></svg>
+                ) : (
+                  <svg className="w-6 h-6 ml-1" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                )}
+              </button>
+
+              <button 
+                onClick={playNext}
+                className="w-10 h-10 bg-slate-800 text-white rounded-full flex items-center justify-center hover:bg-slate-700 transition-all"
+              >
+                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
+              </button>
+            </div>
           </div>
 
-          <div className="flex items-center gap-3 relative z-10 mt-2">
+          <div className="flex items-center gap-3 relative z-10 mt-2 border-t border-slate-800 pt-4">
             <svg className="w-4 h-4 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072M17.95 6.05a8 8 0 010 11.9m-9.5-6H5a2 2 0 00-2 2v2a2 2 0 002 2h3.5l4.5 4.5v-15L8.45 10.05z" /></svg>
             <input 
               type="range" 
@@ -392,6 +410,35 @@ function DiagnosticOverlay({ getDiagnostics }: { getDiagnostics: any }) {
       evidence={data.evidence || 0}
       audio={data.audio || null}
     />
+  );
+}
+
+function MusicDebugOverlay({ getDiagnostics }: { getDiagnostics: any }) {
+  const [data, setData] = useState<any>(null);
+
+  useEffect(() => {
+    const interval = setInterval(() => setData(getDiagnostics()), 100);
+    return () => clearInterval(interval);
+  }, [getDiagnostics]);
+
+  if (!data) return null;
+  const hasHand = data.features !== null;
+  const mState = data.musicGestureState;
+  const dInfo = data.musicDebugInfo || { armedX: 0, currentX: 0, deltaX: 0, intent: '' };
+  const stateText = mState === 'IDLE' ? 'IDLE' : mState === 'READY_OPEN' ? 'READY_OPEN' : mState === 'ARMED_FIST' ? 'ARMED_FIST' : 'COOLDOWN';
+  
+  return (
+    <div className="w-full bg-slate-900 text-emerald-400 text-xs font-mono p-4 rounded-2xl shadow-xl flex flex-col gap-1 text-left">
+      <div className="font-bold text-white mb-1">🔍 DIAGNOSTICS OVERLAY</div>
+      <div>HAND: {hasHand ? 'DETECTED' : 'NOT DETECTED'}</div>
+      <div>MUSIC STATE: {stateText}</div>
+      <div>ARMED X: {dInfo.armedX?.toFixed(3)}</div>
+      <div>CURRENT X: {dInfo.currentX?.toFixed(3)}</div>
+      <div>DELTA X: {dInfo.deltaX?.toFixed(3)}</div>
+      <div>INTENT: <span className="text-amber-400 font-bold">{dInfo.intent}</span></div>
+      <div>TRACK: {data.audio?.trackIndex}</div>
+      <div>PLAYING: {data.audio?.state === 'PLAYING' ? 'YES' : 'NO'}</div>
+    </div>
   );
 }
 
