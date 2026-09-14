@@ -13,7 +13,7 @@ export class AudioEngine {
   
   private state: AudioState = 'UNINITIALIZED';
   private primarySrc = '/ambient.wav';
-  private fallbackSrc = 'https://actions.google.com/sounds/v1/water/waves_crashing_on_rock_beach.ogg';
+  private fallbackSrc = '/assets/audio/focus1.ogg';
   
   public onStateChange?: (isPlaying: boolean, trackIndex: number) => void;
 
