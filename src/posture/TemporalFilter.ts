@@ -37,6 +37,10 @@ export class TemporalFilter {
     let dt = 16.6; // ~60fps default
     if (this.lastFrameTime !== null) {
       dt = Math.max(1, nowMs - this.lastFrameTime);
+      // Prevent massive leaps when returning from background
+      if (dt > 1000) {
+        dt = 16.6;
+      }
     }
     this.lastFrameTime = nowMs;
 
